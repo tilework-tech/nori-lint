@@ -1,3 +1,4 @@
 fn main() {
-    println!("helloworld");
+    let code = nori_lint::cli::run();
+    std::process::exit(code);
 }

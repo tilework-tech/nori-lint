@@ -4,24 +4,45 @@ Path: @/
 
 ### Overview
 
-- Rust binary crate for the `nori-lint` command-line tool
-- Currently in initial scaffolding phase -- the binary prints "helloworld" as a placeholder
-- Uses Rust edition 2024 and follows the standard Cargo binary crate layout (`src/main.rs` for the binary, `tests/` for integration tests)
+- Rust CLI tool that lints SKILL.md files (AI agent skill configuration files)
+- Uses a plugin-based architecture: a `Rule` trait + `Registry` pattern allows new lint rules to be added independently
+- Hybrid crate (lib.rs + main.rs) enabling both unit tests on library code and integration tests on the binary
 
 ### How it fits into the larger codebase
 
-- Part of the Nori monorepo at `@/../nori/`; sits alongside other Nori projects like `nori-watchtower`, `nori-toolbox`, `nori-premortem`, etc.
-- Intended to become a standalone linting CLI tool -- currently no integration points with other Nori projects
+- Part of the Nori monorepo at `@/../nori/`; sits alongside other Nori projects
+- Intended to lint SKILL.md files found throughout the Nori skills system (e.g., files under `~/.claude/skills/`)
+- No runtime dependencies on other Nori projects -- operates as a standalone CLI
 
 ### Core Implementation
 
-- **Entry point:** `@/src/main.rs` -- contains `fn main()` which prints `"helloworld"` to stdout
-- **Integration tests:** `@/tests/cli.rs` -- uses the `assert_cmd` crate to invoke the compiled `nori-lint` binary as a subprocess and assert on its stdout output
-- **Build configuration:** `@/Cargo.toml` declares the package name `nori-lint` with `assert_cmd` as a dev-dependency for testing
+- **Binary entry point:** `@/src/main.rs` calls `nori_lint::cli::run()` and exits with its return code
+- **Library root:** `@/src/lib.rs` exposes three public modules: `cli`, `registry`, and `rules`
+- **CLI orchestration:** `@/src/cli.rs` creates a `Registry`, registers all default rules, walks the directory tree for `SKILL.md` files using `walkdir`, runs every registered rule against each file, prints violations, and returns exit code 0 (clean) or 1 (violations found)
+- **Plugin system:** `@/src/registry.rs` defines the `Rule` trait and `Registry` struct -- new rules implement `Rule` and get registered in `cli::run()`
+- **Rule implementations:** `@/src/rules/` contains individual lint rule modules
 
 ### Things to Know
 
-- The `assert_cmd` crate's `cargo_bin_cmd!` macro locates the compiled binary by crate name, so renaming the package in `Cargo.toml` requires updating the macro argument in test files
-- There is no library crate (`lib.rs`) -- all code is in the binary target. If the project grows, extracting logic into a library crate will allow unit testing without subprocess overhead
+- Output format: `[rule_name] path/to/SKILL.md: error message`
+- Exit codes: 0 = no violations found, 1 = at least one violation found
+- File discovery walks from the current working directory, so the binary must be invoked from the intended root
+- The `walkdir` crate is the only runtime dependency; `assert_cmd`, `predicates`, and `tempfile` are dev-only
+
+```
+                         main.rs
+                            |
+                        cli::run()
+                       /          \
+              Registry              WalkDir(".")
+             /                          \
+    [Rule, Rule, ...]          find SKILL.md files
+             \                        /
+              --- run rules on each file ---
+                            |
+                   print violations
+                            |
+                   exit(0 or 1)
+```
 
 Created and maintained by Nori.
