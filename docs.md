@@ -18,26 +18,27 @@ Path: @/
 
 - **Binary entry point:** `@/src/main.rs` calls `nori_lint::cli::run()` and exits with its return code
 - **Library root:** `@/src/lib.rs` exposes three public modules: `cli`, `registry`, and `rules`
-- **CLI orchestration:** `@/src/cli.rs` creates a `Registry`, registers all default rules, walks the directory tree for `SKILL.md` files using `walkdir`, runs every registered rule against each file, prints violations, and returns exit code 0 (clean) or 1 (violations found)
+- **CLI orchestration:** `@/src/cli.rs` creates a `Registry`, registers all default rules, walks a directory tree for `SKILL.md` files using `walkdir`, runs every registered rule against each file, prints violations, and returns exit code 0 (clean) or 1 (violations found)
+- **Directory argument:** The CLI accepts an optional positional argument specifying the directory to lint. When omitted, it defaults to the current working directory (`"."`). If the argument is not a valid directory, the CLI prints an error to stderr and exits with code 1.
 - **Plugin system:** `@/src/registry.rs` defines the `Rule` trait and `Registry` struct -- new rules implement `Rule` and get registered in `cli::run()`
 - **Rule implementations:** `@/src/rules/` contains individual lint rule modules
 
 ### Things to Know
 
 - Output format: `[rule_name] path/to/SKILL.md: error message`
-- Exit codes: 0 = no violations found, 1 = at least one violation found
-- File discovery walks from the current working directory, so the binary must be invoked from the intended root
+- Exit codes: 0 = no violations found, 1 = at least one violation found (or invalid directory argument)
+- File discovery walks from either the provided directory argument or the current working directory when no argument is given
 - The `walkdir` crate is the only runtime dependency; `assert_cmd`, `predicates`, and `tempfile` are dev-only
 
 ```
                          main.rs
                             |
                         cli::run()
-                       /          \
-              Registry              WalkDir(".")
-             /                          \
-    [Rule, Rule, ...]          find SKILL.md files
-             \                        /
+                       /    |     \
+              Registry   parse   WalkDir(root)
+             /           args        \
+    [Rule, Rule, ...]    |     find SKILL.md files
+             \           |          /
               --- run rules on each file ---
                             |
                    print violations
