@@ -6,6 +6,8 @@ use walkdir::WalkDir;
 use crate::diagnostic::LintDiagnostic;
 use crate::registry::Registry;
 use crate::rules::line_count::LineCountRule;
+use crate::rules::required_tags::RequiredTagsRule;
+use crate::rules::unclosed_tags::UnclosedTagsRule;
 
 #[derive(Debug, PartialEq)]
 enum OutputFormat {
@@ -70,6 +72,8 @@ pub fn run() -> i32 {
 
     let mut registry = Registry::new();
     registry.register(Box::new(LineCountRule));
+    registry.register(Box::new(RequiredTagsRule));
+    registry.register(Box::new(UnclosedTagsRule));
 
     let mut diagnostics: Vec<LintDiagnostic> = Vec::new();
     let mut has_read_error = false;
