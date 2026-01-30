@@ -26,6 +26,7 @@ Path: @/
 - **Plugin system:** `@/src/registry.rs` holds the `Registry` struct -- new rules implement the `Rule` trait and get registered in `cli::run()`
 - **Rule trait:** defined in `@/src/rules/mod.rs`, requires `name()`, `description()`, and `run() -> Option<RuleViolation>`
 - **Rule implementations:** `@/src/rules/` contains individual lint rule modules
+- **CI pipeline:** `@/.github/workflows/ci.yml` runs formatting, linting, and test checks on every push and pull request -- see `@/.github/workflows/docs.md`
 
 ### Things to Know
 
@@ -35,6 +36,7 @@ Path: @/
 - Exit codes: 0 = no violations found, 1 = at least one violation or error (or invalid directory argument)
 - File discovery walks from either the provided directory argument or the current working directory when no argument is given
 - Runtime dependencies: `walkdir` (file discovery), `serde` with derive feature (serialization), `serde_json` (JSON output)
+- All pushes and PRs must pass CI: `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test`
 
 ```
                          main.rs
