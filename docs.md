@@ -20,7 +20,8 @@ Path: @/
 
 - **Binary entry point:** `@/src/main.rs` calls `nori_lint::cli::run()` and exits with its return code
 - **Library root:** `@/src/lib.rs` exposes four public modules: `cli`, `diagnostic`, `registry`, and `rules`
-- **CLI orchestration:** `@/src/cli.rs` parses `--format text|json` from CLI args, creates a `Registry`, registers all default rules, walks the directory tree for `SKILL.md` files using `walkdir`, runs every registered rule against each file, collects `LintDiagnostic` structs, and renders output in the selected format
+- **CLI orchestration:** `@/src/cli.rs` parses CLI args for an optional directory path (defaults to `"."`) and `--format text|json`, creates a `Registry`, registers all default rules, walks the directory tree for `SKILL.md` files using `walkdir`, runs every registered rule against each file, collects `LintDiagnostic` structs, and renders output in the selected format
+- **Directory argument:** The CLI accepts an optional positional argument specifying the directory to lint. When omitted, it defaults to the current working directory (`"."`). If the argument is not a valid directory, the CLI prints an error to stderr and exits with code 1.
 - **Diagnostic types:** `@/src/diagnostic.rs` defines `RuleViolation` (returned by rules) and `LintDiagnostic` (serializable output record with rule name, file path, optional line/snippet, and message)
 - **Plugin system:** `@/src/registry.rs` holds the `Registry` struct -- new rules implement the `Rule` trait and get registered in `cli::run()`
 - **Rule trait:** defined in `@/src/rules/mod.rs`, requires `name()`, `description()`, and `run() -> Option<RuleViolation>`
@@ -31,8 +32,8 @@ Path: @/
 - CLI accepts `--format text|json`; default is `text`. Invalid values produce an error on stderr and exit code 1
 - Text output format: `[rule_name] path/to/SKILL.md: error message`
 - JSON output format: a JSON array of `LintDiagnostic` objects, each with `rule`, `file`, `line`, `snippet`, and `message` fields
-- Exit codes: 0 = no violations found, 1 = at least one violation or error
-- File discovery walks from the current working directory, so the binary must be invoked from the intended root
+- Exit codes: 0 = no violations found, 1 = at least one violation or error (or invalid directory argument)
+- File discovery walks from either the provided directory argument or the current working directory when no argument is given
 - Runtime dependencies: `walkdir` (file discovery), `serde` with derive feature (serialization), `serde_json` (JSON output)
 
 ```
@@ -40,9 +41,9 @@ Path: @/
                             |
                         cli::run()
                        /    |     \
-              Registry  WalkDir(".")  parse --format
-             /                |               \
-    [Rule, Rule, ...]  find SKILL.md files   Text | Json
+              Registry  parse args  WalkDir(root)
+             /           /    \         \
+    [Rule, Rule, ...]  root  format   find SKILL.md files
              \                /
               --- run rules on each file ---
                             |

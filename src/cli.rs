@@ -1,3 +1,4 @@
+use std::env;
 use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
@@ -20,31 +21,52 @@ fn match_format_value(value: &str) -> Result<OutputFormat, String> {
     }
 }
 
-fn parse_format(args: &[String]) -> Result<OutputFormat, String> {
-    for (i, arg) in args.iter().enumerate() {
-        if let Some(val) = arg.strip_prefix("--format=") {
-            return match_format_value(val);
-        }
-        if arg == "--format" {
+struct CliArgs {
+    format: OutputFormat,
+    root: String,
+}
+
+fn parse_args(args: &[String]) -> Result<CliArgs, String> {
+    let mut format = OutputFormat::Text;
+    let mut root = ".".to_string();
+    let mut i = 0;
+    while i < args.len() {
+        if let Some(val) = args[i].strip_prefix("--format=") {
+            format = match_format_value(val)?;
+        } else if args[i] == "--format" {
             if i + 1 >= args.len() {
                 return Err("--format requires a value (text or json)".to_string());
             }
-            return match_format_value(&args[i + 1]);
+            format = match_format_value(&args[i + 1])?;
+            i += 1;
+        } else if !args[i].starts_with('-') {
+            root = args[i].clone();
         }
+        i += 1;
     }
-    Ok(OutputFormat::Text)
+    Ok(CliArgs { format, root })
 }
 
 pub fn run() -> i32 {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = env::args().skip(1).collect();
 
-    let format = match parse_format(&args) {
-        Ok(f) => f,
+    let cli = match parse_args(&args) {
+        Ok(c) => c,
         Err(msg) => {
             eprintln!("error: {msg}");
             return 1;
         }
     };
+
+    let root_path = Path::new(&cli.root);
+
+    if !root_path.exists() {
+        eprintln!("error: {} does not exist", cli.root);
+        return 1;
+    } else if !root_path.is_dir() {
+        eprintln!("error: {} is not a directory", cli.root);
+        return 1;
+    }
 
     let mut registry = Registry::new();
     registry.register(Box::new(LineCountRule));
@@ -52,10 +74,10 @@ pub fn run() -> i32 {
     let mut diagnostics: Vec<LintDiagnostic> = Vec::new();
     let mut has_read_error = false;
 
-    for entry in WalkDir::new(".").into_iter().filter_map(|e| e.ok()) {
+    for entry in WalkDir::new(root_path).into_iter().filter_map(|e| e.ok()) {
         if entry.file_name() == "SKILL.md" {
             let path = entry.path();
-            let display_path = path.strip_prefix(Path::new(".")).unwrap_or(path);
+            let display_path = path.strip_prefix(root_path).unwrap_or(path);
             let display_str = display_path.display().to_string();
             match fs::read_to_string(path) {
                 Ok(content) => {
@@ -79,7 +101,7 @@ pub fn run() -> i32 {
 
     let has_violations = !diagnostics.is_empty() || has_read_error;
 
-    match format {
+    match cli.format {
         OutputFormat::Text => {
             for diag in &diagnostics {
                 match diag.line {

@@ -82,6 +82,52 @@ fn discovers_skill_files_in_nested_directories() {
         .stdout(predicate::str::contains("SKILL.md"));
 }
 
+// === Directory path argument tests ===
+
+#[test]
+fn accepts_directory_path_argument() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), small_skill_content()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.arg(dir.path()).assert().success();
+}
+
+#[test]
+fn accepts_directory_path_with_violations() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), large_skill_content()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.arg(dir.path())
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("line_count"))
+        .stdout(predicate::str::contains("SKILL.md"));
+}
+
+#[test]
+fn reports_error_for_nonexistent_directory() {
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.arg("/nonexistent/path/that/does/not/exist")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("does not exist"));
+}
+
+#[test]
+fn reports_error_for_file_instead_of_directory() {
+    let dir = TempDir::new().unwrap();
+    let file_path = dir.path().join("somefile.txt");
+    fs::write(&file_path, "not a directory").unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.arg(&file_path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("is not a directory"));
+}
+
 // === --format text tests ===
 
 #[test]

@@ -9,14 +9,15 @@ Path: @/tests
 
 ### How it fits into the larger codebase
 
-- Exercises the compiled binary produced from `@/src/main.rs` -- tests the full end-to-end pipeline including file discovery, rule execution, output formatting (text and JSON), and exit codes
+- Exercises the compiled binary produced from `@/src/main.rs` -- tests the full end-to-end pipeline including file discovery, rule execution, output formatting (text and JSON), directory argument handling, and exit codes
 - Run via `cargo test` -- Cargo automatically discovers files in the `tests/` directory as integration test targets
 - Unit tests for the `Rule` trait and individual rules live in `@/src/registry.rs` and `@/src/rules/` alongside the production code
 
 ### Core Implementation
 
-- `cli.rs` uses `tempfile::TempDir` to create isolated filesystem environments, writes SKILL.md files with known content, then runs the `nori-lint` binary via `assert_cmd` with `current_dir` set to the temp directory
-- Tests are organized into groups: default/text format tests (backward compatibility, file discovery, mixed valid/invalid files, nested directories) and `--format json` tests (valid JSON output shape, empty array for no violations, multiple diagnostics, JSON field assertions)
+- `cli.rs` uses `tempfile::TempDir` to create isolated filesystem environments, writes SKILL.md files with known content, then runs the `nori-lint` binary via `assert_cmd`
+- Tests exercise the binary in two modes: via `current_dir` (setting the working directory for implicit root) and via `.arg()` (passing an explicit directory path argument)
+- Tests are organized into groups: default/text format tests (backward compatibility, file discovery, mixed valid/invalid files, nested directories), directory argument tests (valid path, path with violations, nonexistent path, file instead of directory), and `--format json` tests (valid JSON output shape, empty array for no violations, multiple diagnostics, JSON field assertions)
 - Helper functions `small_skill_content()` and `large_skill_content()` generate test fixtures -- the large fixture produces 200 lines, exceeding the 150-line limit
 - JSON tests parse stdout with `serde_json` and assert on the array structure and individual diagnostic fields (`rule`, `file`, `message`, `line`, `snippet`)
 
@@ -28,5 +29,6 @@ Path: @/tests
 - The `--format json` tests verify the JSON contract: output is always an array of diagnostic objects, even when empty; each object has `rule`, `file`, `message`, `line`, and `snippet` keys
 - Invalid `--format` values (e.g., `xml`) produce an error on stderr and exit code 1
 - The mixed-files test accounts for OS path separator differences by checking for both `bad/SKILL.md` and `bad\SKILL.md`
+- The nonexistent directory test asserts on stderr (not stdout) since invalid directory errors are written to stderr
 
 Created and maintained by Nori.
