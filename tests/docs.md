@@ -15,8 +15,9 @@ Path: @/tests
 
 ### Core Implementation
 
-- `cli.rs` uses `tempfile::TempDir` to create isolated filesystem environments, writes SKILL.md files with known content, then runs the `nori-lint` binary via `assert_cmd` with `current_dir` set to the temp directory
-- Tests cover: no SKILL.md files present (exit 0), valid files (exit 0), files exceeding the line limit (exit 1), mixed valid/invalid files (only violating files appear in output), and nested directory discovery
+- `cli.rs` uses `tempfile::TempDir` to create isolated filesystem environments, writes SKILL.md files with known content, then runs the `nori-lint` binary via `assert_cmd`
+- Tests exercise the binary in two modes: via `current_dir` (setting the working directory for implicit root) and via `.arg()` (passing an explicit directory path argument)
+- Tests cover: no SKILL.md files present (exit 0), valid files (exit 0), files exceeding the line limit (exit 1), mixed valid/invalid files (only violating files appear in output), nested directory discovery, explicit directory path arguments (both valid and with violations), and error handling for nonexistent directory paths
 - Helper functions `small_skill_content()` and `large_skill_content()` generate test fixtures -- the large fixture produces 200 lines, exceeding the 150-line limit
 
 ### Things to Know
@@ -24,5 +25,6 @@ Path: @/tests
 - `cargo_bin_cmd!("nori-lint")` resolves the binary path using the crate name from `@/Cargo.toml` -- if the package name changes, the macro argument must be updated
 - Tests use `predicate::str::contains` for output assertions, checking for rule names and file paths rather than exact output strings
 - The mixed-files test accounts for OS path separator differences by checking for both `bad/SKILL.md` and `bad\SKILL.md`
+- The nonexistent directory test asserts on stderr (not stdout) since invalid directory errors are written to stderr
 
 Created and maintained by Nori.
