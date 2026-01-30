@@ -4,7 +4,8 @@ use std::fs;
 use tempfile::TempDir;
 
 fn small_skill_content() -> String {
-    "---\nname: Test Skill\ndescription: A test skill\n---\n\nSome content.\n".to_string()
+    "---\nname: Test Skill\ndescription: A test skill\n---\n\n<required>\nSome content.\n</required>\n"
+        .to_string()
 }
 
 fn large_skill_content() -> String {
@@ -172,15 +173,15 @@ fn format_json_outputs_valid_json_with_violation() {
         serde_json::from_str(&stdout).expect("output should be valid JSON");
 
     let arr = parsed.as_array().expect("output should be a JSON array");
-    assert_eq!(arr.len(), 1);
-
-    let diag = &arr[0];
-    assert_eq!(diag["rule"], "line_count");
-    assert_eq!(diag["file"], "SKILL.md");
-    assert!(diag["message"].as_str().unwrap().contains("200"));
-    assert!(diag["message"].as_str().unwrap().contains("150"));
-    assert!(diag["line"].is_null());
-    assert!(diag["snippet"].is_null());
+    let line_count_diag = arr
+        .iter()
+        .find(|d| d["rule"] == "line_count")
+        .expect("should contain a line_count violation");
+    assert_eq!(line_count_diag["file"], "SKILL.md");
+    assert!(line_count_diag["message"].as_str().unwrap().contains("200"));
+    assert!(line_count_diag["message"].as_str().unwrap().contains("150"));
+    assert!(line_count_diag["line"].is_null());
+    assert!(line_count_diag["snippet"].is_null());
 }
 
 #[test]
@@ -233,11 +234,20 @@ fn format_json_outputs_multiple_diagnostics() {
         serde_json::from_str(&stdout).expect("output should be valid JSON");
 
     let arr = parsed.as_array().expect("output should be a JSON array");
-    assert_eq!(arr.len(), 2);
+    assert!(
+        arr.len() >= 2,
+        "should have at least 2 diagnostics across two files, got {}",
+        arr.len()
+    );
 
-    // Both should be line_count violations
-    for diag in arr {
-        assert_eq!(diag["rule"], "line_count");
+    // Each file should have at least one line_count violation
+    let line_count_diags: Vec<_> = arr.iter().filter(|d| d["rule"] == "line_count").collect();
+    assert_eq!(
+        line_count_diags.len(),
+        2,
+        "should have exactly 2 line_count violations"
+    );
+    for diag in &line_count_diags {
         assert!(diag["file"].as_str().unwrap().contains("SKILL.md"));
     }
 }
@@ -286,6 +296,112 @@ fn format_equals_syntax_works() {
         serde_json::from_str(&stdout).expect("--format=json should produce valid JSON");
 
     let arr = parsed.as_array().expect("output should be a JSON array");
-    assert_eq!(arr.len(), 1);
-    assert_eq!(arr[0]["rule"], "line_count");
+    assert!(
+        arr.iter().any(|d| d["rule"] == "line_count"),
+        "should contain a line_count violation"
+    );
+}
+
+// === required_tags rule tests ===
+
+fn skill_without_required_tags() -> String {
+    "---\nname: Test Skill\ndescription: A test skill\n---\n\nSome content without required tags.\n"
+        .to_string()
+}
+
+#[test]
+fn exits_failure_for_skill_file_missing_required_tags() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), skill_without_required_tags()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.current_dir(dir.path())
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("required_tags"));
+}
+
+#[test]
+fn format_json_includes_required_tags_violation() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), skill_without_required_tags()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    let output = cmd
+        .arg("--format")
+        .arg("json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output should be valid JSON");
+
+    let arr = parsed.as_array().expect("output should be a JSON array");
+    let required_diag = arr
+        .iter()
+        .find(|d| d["rule"] == "required_tags")
+        .expect("should contain a required_tags violation");
+    assert_eq!(required_diag["file"], "SKILL.md");
+    assert!(
+        required_diag["message"]
+            .as_str()
+            .unwrap()
+            .contains("required")
+    );
+}
+
+// === unclosed_tags rule tests ===
+
+fn skill_with_unclosed_tag() -> String {
+    "---\nname: Test Skill\ndescription: A test skill\n---\n\n<required>\nSome content.\n"
+        .to_string()
+}
+
+#[test]
+fn exits_failure_for_skill_file_with_unclosed_tag() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), skill_with_unclosed_tag()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.current_dir(dir.path())
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("unclosed_tags"));
+}
+
+#[test]
+fn format_json_includes_unclosed_tags_violation() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), skill_with_unclosed_tag()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    let output = cmd
+        .arg("--format")
+        .arg("json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output should be valid JSON");
+
+    let arr = parsed.as_array().expect("output should be a JSON array");
+    let unclosed_diag = arr
+        .iter()
+        .find(|d| d["rule"] == "unclosed_tags")
+        .expect("should contain an unclosed_tags violation");
+    assert_eq!(unclosed_diag["file"], "SKILL.md");
+    assert!(
+        unclosed_diag["message"]
+            .as_str()
+            .unwrap()
+            .contains("required")
+    );
 }

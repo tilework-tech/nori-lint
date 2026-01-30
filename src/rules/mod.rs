@@ -1,4 +1,6 @@
 pub mod line_count;
+pub mod required_tags;
+pub mod unclosed_tags;
 
 use crate::diagnostic::RuleViolation;
 
