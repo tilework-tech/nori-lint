@@ -14,6 +14,8 @@ fn large_skill_content() -> String {
         .join("\n")
 }
 
+// === Existing tests (default text format, backward compatibility) ===
+
 #[test]
 fn exits_success_when_no_skill_files_found() {
     let dir = TempDir::new().unwrap();
@@ -78,4 +80,166 @@ fn discovers_skill_files_in_nested_directories() {
         .assert()
         .failure()
         .stdout(predicate::str::contains("SKILL.md"));
+}
+
+// === --format text tests ===
+
+#[test]
+fn format_text_produces_same_output_as_default() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), large_skill_content()).unwrap();
+
+    let mut default_cmd = cargo_bin_cmd!("nori-lint");
+    let default_output = default_cmd.current_dir(dir.path()).output().unwrap();
+
+    let mut text_cmd = cargo_bin_cmd!("nori-lint");
+    let text_output = text_cmd
+        .arg("--format")
+        .arg("text")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert_eq!(default_output.stdout, text_output.stdout);
+    assert_eq!(default_output.status.code(), text_output.status.code());
+}
+
+// === --format json tests ===
+
+#[test]
+fn format_json_outputs_valid_json_with_violation() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), large_skill_content()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    let output = cmd
+        .arg("--format")
+        .arg("json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output should be valid JSON");
+
+    let arr = parsed.as_array().expect("output should be a JSON array");
+    assert_eq!(arr.len(), 1);
+
+    let diag = &arr[0];
+    assert_eq!(diag["rule"], "line_count");
+    assert_eq!(diag["file"], "SKILL.md");
+    assert!(diag["message"].as_str().unwrap().contains("200"));
+    assert!(diag["message"].as_str().unwrap().contains("150"));
+    assert!(diag["line"].is_null());
+    assert!(diag["snippet"].is_null());
+}
+
+#[test]
+fn format_json_outputs_empty_array_when_no_violations() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), small_skill_content()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    let output = cmd
+        .arg("--format")
+        .arg("json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output should be valid JSON");
+
+    let arr = parsed.as_array().expect("output should be a JSON array");
+    assert!(arr.is_empty());
+}
+
+#[test]
+fn format_json_outputs_multiple_diagnostics() {
+    let dir = TempDir::new().unwrap();
+
+    let dir_a = dir.path().join("a");
+    fs::create_dir(&dir_a).unwrap();
+    fs::write(dir_a.join("SKILL.md"), large_skill_content()).unwrap();
+
+    let dir_b = dir.path().join("b");
+    fs::create_dir(&dir_b).unwrap();
+    fs::write(dir_b.join("SKILL.md"), large_skill_content()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    let output = cmd
+        .arg("--format")
+        .arg("json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output should be valid JSON");
+
+    let arr = parsed.as_array().expect("output should be a JSON array");
+    assert_eq!(arr.len(), 2);
+
+    // Both should be line_count violations
+    for diag in arr {
+        assert_eq!(diag["rule"], "line_count");
+        assert!(diag["file"].as_str().unwrap().contains("SKILL.md"));
+    }
+}
+
+#[test]
+fn format_invalid_value_prints_error() {
+    let dir = TempDir::new().unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.arg("--format")
+        .arg("xml")
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("format"));
+}
+
+#[test]
+fn format_missing_value_prints_error() {
+    let dir = TempDir::new().unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.arg("--format")
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--format requires a value"));
+}
+
+#[test]
+fn format_equals_syntax_works() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), large_skill_content()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    let output = cmd
+        .arg("--format=json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("--format=json should produce valid JSON");
+
+    let arr = parsed.as_array().expect("output should be a JSON array");
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["rule"], "line_count");
 }

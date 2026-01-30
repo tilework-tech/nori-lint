@@ -27,6 +27,7 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diagnostic::RuleViolation;
 
     struct PassingRule;
     impl Rule for PassingRule {
@@ -36,7 +37,7 @@ mod tests {
         fn description(&self) -> &str {
             "always passes"
         }
-        fn run(&self, _input: &str) -> Option<String> {
+        fn run(&self, _input: &str) -> Option<RuleViolation> {
             None
         }
     }
@@ -49,8 +50,12 @@ mod tests {
         fn description(&self) -> &str {
             "always fails"
         }
-        fn run(&self, _input: &str) -> Option<String> {
-            Some("something went wrong".to_string())
+        fn run(&self, _input: &str) -> Option<RuleViolation> {
+            Some(RuleViolation {
+                message: "something went wrong".to_string(),
+                line: None,
+                snippet: None,
+            })
         }
     }
 
