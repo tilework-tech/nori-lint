@@ -22,6 +22,7 @@ Path: @/
 - **Directory argument:** The CLI accepts an optional positional argument specifying the directory to lint. When omitted, it defaults to the current working directory (`"."`). If the argument is not a valid directory, the CLI prints an error to stderr and exits with code 1.
 - **Plugin system:** `@/src/registry.rs` defines the `Rule` trait and `Registry` struct -- new rules implement `Rule` and get registered in `cli::run()`
 - **Rule implementations:** `@/src/rules/` contains individual lint rule modules
+- **CI pipeline:** `@/.github/workflows/ci.yml` runs formatting, linting, and test checks on every push and pull request -- see `@/.github/workflows/docs.md`
 
 ### Things to Know
 
@@ -29,6 +30,7 @@ Path: @/
 - Exit codes: 0 = no violations found, 1 = at least one violation found (or invalid directory argument)
 - File discovery walks from either the provided directory argument or the current working directory when no argument is given
 - The `walkdir` crate is the only runtime dependency; `assert_cmd`, `predicates`, and `tempfile` are dev-only
+- All pushes and PRs must pass CI: `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test`
 
 ```
                          main.rs
