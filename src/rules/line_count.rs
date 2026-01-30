@@ -1,3 +1,4 @@
+use crate::diagnostic::RuleViolation;
 use crate::rules::Rule;
 
 const MAX_LINES: usize = 150;
@@ -13,12 +14,14 @@ impl Rule for LineCountRule {
         "Checks that SKILL.md files do not exceed 150 lines"
     }
 
-    fn run(&self, input: &str) -> Option<String> {
+    fn run(&self, input: &str) -> Option<RuleViolation> {
         let count = input.lines().count();
         if count > MAX_LINES {
-            Some(format!(
-                "File has {count} lines, exceeding the limit of {MAX_LINES}"
-            ))
+            Some(RuleViolation {
+                message: format!("File has {count} lines, exceeding the limit of {MAX_LINES}"),
+                line: None,
+                snippet: None,
+            })
         } else {
             None
         }
@@ -47,7 +50,7 @@ mod tests {
     }
 
     #[test]
-    fn returns_error_at_151_lines() {
+    fn returns_violation_at_151_lines() {
         let rule = LineCountRule;
         let content: String = (1..=151)
             .map(|i| format!("line {i}"))
@@ -55,14 +58,24 @@ mod tests {
             .join("\n");
         let result = rule.run(&content);
         assert!(result.is_some());
-        let msg = result.unwrap();
+        let violation = result.unwrap();
         assert!(
-            msg.contains("151"),
-            "error should mention actual line count, got: {msg}"
+            violation.message.contains("151"),
+            "error should mention actual line count, got: {}",
+            violation.message
         );
         assert!(
-            msg.contains("150"),
-            "error should mention the limit, got: {msg}"
+            violation.message.contains("150"),
+            "error should mention the limit, got: {}",
+            violation.message
+        );
+        assert!(
+            violation.line.is_none(),
+            "line_count is a file-level rule, line should be None"
+        );
+        assert!(
+            violation.snippet.is_none(),
+            "line_count is a file-level rule, snippet should be None"
         );
     }
 

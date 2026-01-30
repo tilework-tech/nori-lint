@@ -9,7 +9,7 @@ Path: @/tests
 
 ### How it fits into the larger codebase
 
-- Exercises the compiled binary produced from `@/src/main.rs` -- tests the full end-to-end pipeline including file discovery, rule execution, output formatting, and exit codes
+- Exercises the compiled binary produced from `@/src/main.rs` -- tests the full end-to-end pipeline including file discovery, rule execution, output formatting (text and JSON), directory argument handling, and exit codes
 - Run via `cargo test` -- Cargo automatically discovers files in the `tests/` directory as integration test targets
 - Unit tests for the `Rule` trait and individual rules live in `@/src/registry.rs` and `@/src/rules/` alongside the production code
 
@@ -17,13 +17,17 @@ Path: @/tests
 
 - `cli.rs` uses `tempfile::TempDir` to create isolated filesystem environments, writes SKILL.md files with known content, then runs the `nori-lint` binary via `assert_cmd`
 - Tests exercise the binary in two modes: via `current_dir` (setting the working directory for implicit root) and via `.arg()` (passing an explicit directory path argument)
-- Tests cover: no SKILL.md files present (exit 0), valid files (exit 0), files exceeding the line limit (exit 1), mixed valid/invalid files (only violating files appear in output), nested directory discovery, explicit directory path arguments (both valid and with violations), and error handling for nonexistent directory paths
+- Tests are organized into groups: default/text format tests (backward compatibility, file discovery, mixed valid/invalid files, nested directories), directory argument tests (valid path, path with violations, nonexistent path, file instead of directory), and `--format json` tests (valid JSON output shape, empty array for no violations, multiple diagnostics, JSON field assertions)
 - Helper functions `small_skill_content()` and `large_skill_content()` generate test fixtures -- the large fixture produces 200 lines, exceeding the 150-line limit
+- JSON tests parse stdout with `serde_json` and assert on the array structure and individual diagnostic fields (`rule`, `file`, `message`, `line`, `snippet`)
 
 ### Things to Know
 
 - `cargo_bin_cmd!("nori-lint")` resolves the binary path using the crate name from `@/Cargo.toml` -- if the package name changes, the macro argument must be updated
-- Tests use `predicate::str::contains` for output assertions, checking for rule names and file paths rather than exact output strings
+- Tests use `predicate::str::contains` for text output assertions, checking for rule names and file paths rather than exact output strings
+- The `--format text` tests verify that explicit `--format text` produces identical output to the default (no flag) behavior
+- The `--format json` tests verify the JSON contract: output is always an array of diagnostic objects, even when empty; each object has `rule`, `file`, `message`, `line`, and `snippet` keys
+- Invalid `--format` values (e.g., `xml`) produce an error on stderr and exit code 1
 - The mixed-files test accounts for OS path separator differences by checking for both `bad/SKILL.md` and `bad\SKILL.md`
 - The nonexistent directory test asserts on stderr (not stdout) since invalid directory errors are written to stderr
 
