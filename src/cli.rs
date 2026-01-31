@@ -1,7 +1,8 @@
-use std::env;
 use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
+
+use clap::{Parser, ValueEnum};
 
 use crate::config::{self, Config};
 use crate::diagnostic::LintDiagnostic;
@@ -13,58 +14,44 @@ use crate::rules::llm_rules::redundant_explanation::RedundantExplanationRule;
 use crate::rules::required_tags::RequiredTagsRule;
 use crate::rules::unclosed_tags::UnclosedTagsRule;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, ValueEnum)]
 enum OutputFormat {
     Text,
     Json,
 }
 
-fn match_format_value(value: &str) -> Result<OutputFormat, String> {
-    match value {
-        "text" => Ok(OutputFormat::Text),
-        "json" => Ok(OutputFormat::Json),
-        other => Err(format!("invalid format '{other}': expected text or json")),
-    }
+fn default_registry() -> Registry {
+    let mut registry = Registry::new();
+    registry.register(Box::new(LineCountRule));
+    registry.register(Box::new(RequiredTagsRule));
+    registry.register(Box::new(UnclosedTagsRule));
+    registry
 }
 
-struct CliArgs {
+fn build_rules_help() -> String {
+    let registry = default_registry();
+    let mut lines = vec!["Rules:".to_string()];
+    for rule in registry.rules() {
+        lines.push(format!("  {:20} {}", rule.name(), rule.description()));
+    }
+    lines.join("\n")
+}
+
+/// Lint SKILL.md files for common issues
+#[derive(Parser, Debug)]
+#[command(name = "nori-lint", after_help = build_rules_help())]
+struct Cli {
+    /// Output format
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     format: OutputFormat,
-    root: String,
-    config_path: Option<String>,
-}
 
-fn parse_args(args: &[String]) -> Result<CliArgs, String> {
-    let mut format = OutputFormat::Text;
-    let mut root = ".".to_string();
-    let mut config_path: Option<String> = None;
-    let mut i = 0;
-    while i < args.len() {
-        if let Some(val) = args[i].strip_prefix("--format=") {
-            format = match_format_value(val)?;
-        } else if args[i] == "--format" {
-            if i + 1 >= args.len() {
-                return Err("--format requires a value (text or json)".to_string());
-            }
-            format = match_format_value(&args[i + 1])?;
-            i += 1;
-        } else if let Some(val) = args[i].strip_prefix("--config=") {
-            config_path = Some(val.to_string());
-        } else if args[i] == "--config" {
-            if i + 1 >= args.len() {
-                return Err("--config requires a value".to_string());
-            }
-            config_path = Some(args[i + 1].clone());
-            i += 1;
-        } else if !args[i].starts_with('-') {
-            root = args[i].clone();
-        }
-        i += 1;
-    }
-    Ok(CliArgs {
-        format,
-        root,
-        config_path,
-    })
+    /// Path to config file (default: .nori-lint.json in current directory)
+    #[arg(long)]
+    config: Option<String>,
+
+    /// Directory to lint
+    #[arg(default_value = ".")]
+    path: String,
 }
 
 fn resolve_config(cli_config_path: Option<&str>) -> Result<Option<Config>, String> {
@@ -114,9 +101,9 @@ async fn run_llm_rules<A: LlmAnalyzer>(
 }
 
 pub async fn run() -> i32 {
-    let args: Vec<String> = env::args().skip(1).collect();
+    let cli = Cli::parse();
 
-    let cli = match parse_args(&args) {
+    let config = match resolve_config(cli.config.as_deref()) {
         Ok(c) => c,
         Err(msg) => {
             eprintln!("error: {msg}");
@@ -124,28 +111,17 @@ pub async fn run() -> i32 {
         }
     };
 
-    let config = match resolve_config(cli.config_path.as_deref()) {
-        Ok(c) => c,
-        Err(msg) => {
-            eprintln!("error: {msg}");
-            return 1;
-        }
-    };
-
-    let root_path = Path::new(&cli.root);
+    let root_path = Path::new(&cli.path);
 
     if !root_path.exists() {
-        eprintln!("error: {} does not exist", cli.root);
+        eprintln!("error: {} does not exist", cli.path);
         return 1;
     } else if !root_path.is_dir() {
-        eprintln!("error: {} is not a directory", cli.root);
+        eprintln!("error: {} is not a directory", cli.path);
         return 1;
     }
 
-    let mut registry = Registry::new();
-    registry.register(Box::new(LineCountRule));
-    registry.register(Box::new(RequiredTagsRule));
-    registry.register(Box::new(UnclosedTagsRule));
+    let registry = default_registry();
 
     if config.is_none() {
         eprintln!("note: skipping LLM rules (no .nori-lint.json found; use --config to specify)");
