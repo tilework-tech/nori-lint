@@ -20,8 +20,8 @@ Path: @/
 
 - **Binary entry point:** `@/src/main.rs` calls `nori_lint::cli::run()` and exits with its return code
 - **Library root:** `@/src/lib.rs` exposes four public modules: `cli`, `diagnostic`, `registry`, and `rules`
-- **CLI orchestration:** `@/src/cli.rs` parses CLI args for an optional directory path (defaults to `"."`) and `--format text|json`, creates a `Registry`, registers all default rules, walks the directory tree for `SKILL.md` files using `walkdir`, runs every registered rule against each file, collects `LintDiagnostic` structs, and renders output in the selected format
-- **Directory argument:** The CLI accepts an optional positional argument specifying the directory to lint. When omitted, it defaults to the current working directory (`"."`). If the argument is not a valid directory, the CLI prints an error to stderr and exits with code 1.
+- **CLI orchestration:** `@/src/cli.rs` uses clap's derive API to parse CLI arguments (a `Cli` struct with `#[derive(Parser)]`). It accepts an optional positional `[PATH]` argument (defaults to `"."`), `--format text|json`, and `--help`/`-h`. After parsing, it creates a `Registry`, registers all default rules, walks the directory tree for `SKILL.md` files using `walkdir`, runs every registered rule against each file, collects `LintDiagnostic` structs, and renders output in the selected format.
+- **Help output:** `--help` prints usage information plus a dynamically generated list of all registered lint rules and their descriptions, produced by `build_rules_help()` in `cli.rs` via clap's `after_help` attribute. New rules added to the registry automatically appear in help output.
 - **Diagnostic types:** `@/src/diagnostic.rs` defines `RuleViolation` (returned by rules) and `LintDiagnostic` (serializable output record with rule name, file path, optional line/snippet, and message)
 - **Plugin system:** `@/src/registry.rs` holds the `Registry` struct -- new rules implement the `Rule` trait and get registered in `cli::run()`
 - **Rule trait:** defined in `@/src/rules/mod.rs`, requires `name()`, `description()`, and `run() -> Option<RuleViolation>`
@@ -30,23 +30,27 @@ Path: @/
 
 ### Things to Know
 
-- CLI accepts `--format text|json`; default is `text`. Invalid values produce an error on stderr and exit code 1
+- CLI accepts `--format text|json`; default is `text`. Invalid values produce a clap error on stderr and exit code 2
+- `--help` / `-h` prints usage and exits 0; clap handles this automatically, so `cli::run()` never sees help requests
+- clap also handles parse errors itself (exit code 2), so `run()` only handles application-level errors (invalid path, read failures)
 - Text output format: `[rule_name] path/to/SKILL.md: error message`
 - JSON output format: a JSON array of `LintDiagnostic` objects, each with `rule`, `file`, `line`, `snippet`, and `message` fields
-- Exit codes: 0 = no violations found, 1 = at least one violation or error (or invalid directory argument)
+- Exit codes: 0 = no violations found, 1 = at least one violation or application error, 2 = CLI parse error (clap)
 - File discovery walks from either the provided directory argument or the current working directory when no argument is given
-- Runtime dependencies: `walkdir` (file discovery), `serde` with derive feature (serialization), `serde_json` (JSON output)
+- Runtime dependencies: `clap` with derive feature (CLI parsing), `walkdir` (file discovery), `serde` with derive feature (serialization), `serde_json` (JSON output)
 - All pushes and PRs must pass CI: `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test`
 
 ```
                          main.rs
                             |
                         cli::run()
-                       /    |     \
-              Registry  parse args  WalkDir(root)
-             /           /    \         \
-    [Rule, Rule, ...]  root  format   find SKILL.md files
-             \                /
+                            |
+                      Cli::parse()  ── clap handles --help (exit 0)
+                       /    |            and parse errors (exit 2)
+              Registry   path, format    WalkDir(root)
+             /                                \
+    [Rule, Rule, ...]                    find SKILL.md files
+             \                              /
               --- run rules on each file ---
                             |
                 collect Vec<LintDiagnostic>
