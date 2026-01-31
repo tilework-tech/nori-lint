@@ -405,3 +405,109 @@ fn format_json_includes_unclosed_tags_violation() {
             .contains("required")
     );
 }
+
+// === --config tests ===
+
+#[test]
+fn without_config_deterministic_rules_still_run() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), small_skill_content()).unwrap();
+    // No config.json present, no --config flag
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.current_dir(dir.path()).assert().success();
+}
+
+#[test]
+fn config_flag_with_nonexistent_file_prints_error() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), small_skill_content()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.arg("--config")
+        .arg("/nonexistent/config.json")
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("config"));
+}
+
+#[test]
+fn config_flag_with_invalid_json_prints_error() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), small_skill_content()).unwrap();
+    fs::write(dir.path().join("config.json"), "not valid json").unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.arg("--config")
+        .arg(dir.path().join("config.json"))
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("config"));
+}
+
+#[test]
+fn config_flag_with_missing_api_key_prints_error() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), small_skill_content()).unwrap();
+    fs::write(dir.path().join("config.json"), r#"{"some_field": "value"}"#).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.arg("--config")
+        .arg(dir.path().join("config.json"))
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("anthropic_api_key"));
+}
+
+#[test]
+fn config_equals_syntax_works() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), small_skill_content()).unwrap();
+    fs::write(
+        dir.path().join("myconfig.json"),
+        r#"{"some_field": "value"}"#,
+    )
+    .unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.arg(format!(
+        "--config={}",
+        dir.path().join("myconfig.json").display()
+    ))
+    .current_dir(dir.path())
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("anthropic_api_key"));
+}
+
+#[test]
+fn config_flag_missing_value_prints_error() {
+    let dir = TempDir::new().unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.arg("--config")
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--config requires a value"));
+}
+
+#[test]
+fn nori_lint_json_in_cwd_is_auto_discovered() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), small_skill_content()).unwrap();
+    // Write an invalid config to prove it was loaded (missing api key -> error)
+    fs::write(
+        dir.path().join(".nori-lint.json"),
+        r#"{"some_field": "value"}"#,
+    )
+    .unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("anthropic_api_key"));
+}

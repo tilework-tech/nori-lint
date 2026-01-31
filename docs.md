@@ -5,7 +5,7 @@ Path: @/
 ### Overview
 
 - Rust CLI tool that lints SKILL.md files (AI agent skill configuration files)
-- Uses a plugin-based architecture: a `Rule` trait + `Registry` pattern allows new lint rules to be added independently
+- Uses a two-tier rule system: synchronous deterministic rules (`Rule` trait) and async LLM-based rules (`LlmRule` trait) that call the Anthropic Messages API for subjective analysis
 - Supports structured output in text (default) or JSON format via `--format text|json`
 - Hybrid crate (lib.rs + main.rs) enabling both unit tests on library code and integration tests on the binary
 
@@ -18,42 +18,46 @@ Path: @/
 
 ### Core Implementation
 
-- **Binary entry point:** `@/src/main.rs` calls `nori_lint::cli::run()` and exits with its return code
-- **Library root:** `@/src/lib.rs` exposes four public modules: `cli`, `diagnostic`, `registry`, and `rules`
-- **CLI orchestration:** `@/src/cli.rs` parses CLI args for an optional directory path (defaults to `"."`) and `--format text|json`, creates a `Registry`, registers all default rules, walks the directory tree for `SKILL.md` files using `walkdir`, runs every registered rule against each file, collects `LintDiagnostic` structs, and renders output in the selected format
-- **Directory argument:** The CLI accepts an optional positional argument specifying the directory to lint. When omitted, it defaults to the current working directory (`"."`). If the argument is not a valid directory, the CLI prints an error to stderr and exits with code 1.
-- **Diagnostic types:** `@/src/diagnostic.rs` defines `RuleViolation` (returned by rules) and `LintDiagnostic` (serializable output record with rule name, file path, optional line/snippet, and message)
-- **Plugin system:** `@/src/registry.rs` holds the `Registry` struct -- new rules implement the `Rule` trait and get registered in `cli::run()`
-- **Rule trait:** defined in `@/src/rules/mod.rs`, requires `name()`, `description()`, and `run() -> Option<RuleViolation>`
-- **Rule implementations:** `@/src/rules/` contains individual lint rule modules
+- **Binary entry point:** `@/src/main.rs` uses `#[tokio::main(flavor = "current_thread")]` to provide an async runtime, then calls `nori_lint::cli::run().await`
+- **Library root:** `@/src/lib.rs` exposes seven public modules: `cli`, `config`, `diagnostic`, `llm_client`, `llm_registry`, `registry`, and `rules`
+- **CLI orchestration:** `@/src/cli.rs` is the main pipeline. It parses CLI args (`--format`, `--config`, optional directory path), resolves config, builds both registries, walks the directory tree for SKILL.md files, runs deterministic rules synchronously, then runs LLM rules asynchronously (if config is present), and renders output
+- **Two-tier rule system:** Deterministic rules implement `Rule` (in `@/src/rules/mod.rs`) and are registered into `Registry` (in `@/src/registry.rs`). LLM rules implement `LlmRule` (in `@/src/rules/llm_rules/mod.rs`) and are registered into `LlmRegistry` (in `@/src/llm_registry.rs`). Both produce `RuleViolation` structs from `@/src/diagnostic.rs`.
+- **Config-gated LLM execution:** LLM rules only run when a `config.json` with a valid `anthropic_api_key` is present. Config can be provided via `--config <path>` or auto-discovered as `config.json` in the working directory. Without config, behavior is identical to the deterministic-only mode.
+- **LLM client abstraction:** `@/src/llm_client.rs` defines the `LlmAnalyzer` trait (async) and `AnthropicClient` struct. The trait enables dependency injection for testing.
+- **Config loading:** `@/src/config.rs` reads and validates JSON config files. The `Config` struct currently holds a single field: `anthropic_api_key`.
 - **CI pipeline:** `@/.github/workflows/ci.yml` runs formatting, linting, and test checks on every push and pull request -- see `@/.github/workflows/docs.md`
 
 ### Things to Know
 
-- CLI accepts `--format text|json`; default is `text`. Invalid values produce an error on stderr and exit code 1
-- Text output format: `[rule_name] path/to/SKILL.md: error message`
-- JSON output format: a JSON array of `LintDiagnostic` objects, each with `rule`, `file`, `line`, `snippet`, and `message` fields
-- Exit codes: 0 = no violations found, 1 = at least one violation or error (or invalid directory argument)
-- File discovery walks from either the provided directory argument or the current working directory when no argument is given
-- Runtime dependencies: `walkdir` (file discovery), `serde` with derive feature (serialization), `serde_json` (JSON output)
-- All pushes and PRs must pass CI: `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test`
+- CLI accepts `--format text|json` (default: `text`) and `--config <path>` (optional). Invalid values produce an error on stderr and exit code 1.
+- Config auto-discovery: if no `--config` flag is passed, the CLI checks for `config.json` in the current working directory. If found, it is loaded and validated. If not found, only deterministic rules run.
+- `config.json` is gitignored to prevent committing API keys. `defaultConfig.example.json` serves as a template.
+- Exit codes: 0 = no violations, 1 = at least one violation, read error, or LLM error
+- LLM errors (HTTP failures, parse errors) are printed to stderr and cause exit code 1, but do not prevent deterministic rule results from being output
+- Runtime dependencies: `walkdir` (file discovery), `serde`/`serde_json` (serialization), `reqwest` (async HTTP for Anthropic API), `tokio` (async runtime, `current_thread` flavor)
 
 ```
                          main.rs
                             |
+                     [tokio async runtime]
+                            |
                         cli::run()
                        /    |     \
-              Registry  parse args  WalkDir(root)
-             /           /    \         \
-    [Rule, Rule, ...]  root  format   find SKILL.md files
-             \                /
-              --- run rules on each file ---
-                            |
-                collect Vec<LintDiagnostic>
-                            |
-                  format output (text/json)
-                            |
-                   exit(0 or 1)
+              Registry  parse args  resolve_config()
+             /           /   |  \         \
+    [Rule, Rule, ...]  root format config  -> Config (optional)
+                                            |
+                                   AnthropicClient + LlmRegistry
+                                            |
+                               WalkDir(root) -> find SKILL.md files
+                              /                          \
+                 run deterministic rules          run LLM rules (if config)
+                              \                          /
+                         collect Vec<LintDiagnostic>
+                                    |
+                          format output (text/json)
+                                    |
+                             exit(0 or 1)
 ```
 
 Created and maintained by Nori.

@@ -5,32 +5,35 @@ Path: @/src
 ### Overview
 
 - Contains the library and binary source for the `nori-lint` CLI
-- Organized into a hybrid crate: `main.rs` (thin binary entry point) and `lib.rs` (library exposing `cli`, `diagnostic`, `registry`, and `rules` modules)
+- Organized into a hybrid crate: `main.rs` (thin async binary entry point) and `lib.rs` (library exposing `cli`, `config`, `diagnostic`, `llm_client`, `llm_registry`, `registry`, and `rules` modules)
 
 ### How it fits into the larger codebase
 
-- `main.rs` is the binary entry point compiled into the `nori-lint` executable; it delegates immediately to `cli::run()` in the library
+- `main.rs` is the binary entry point compiled into the `nori-lint` executable; it uses `#[tokio::main(flavor = "current_thread")]` and delegates to `cli::run().await`
 - Integration tests in `@/tests/cli.rs` exercise the compiled binary as a subprocess
-- Unit tests live alongside production code in `registry.rs` and `rules/line_count.rs` via `#[cfg(test)]` modules
+- Unit tests live alongside production code in individual modules via `#[cfg(test)]` blocks
 
 ### Core Implementation
 
-- **`main.rs`** -- Calls `nori_lint::cli::run()` and passes its return value to `std::process::exit()`
-- **`lib.rs`** -- Library root that re-exports `cli`, `diagnostic`, `registry`, and `rules` as public modules
+- **`main.rs`** -- Async entry point. Uses `tokio::main` with `current_thread` flavor to drive `cli::run().await`, then passes the return code to `std::process::exit()`.
+- **`lib.rs`** -- Library root that re-exports seven public modules: `cli`, `config`, `diagnostic`, `llm_client`, `llm_registry`, `registry`, `rules`.
 - **`diagnostic.rs`** -- Defines two structs:
-  - `RuleViolation`: returned by `Rule::run()`, carries `message`, optional `line` number, and optional `snippet`. Not serializable -- it is an internal type that rules produce.
-  - `LintDiagnostic`: the output-facing struct, derives `Serialize`. Contains `rule`, `file`, `line`, `snippet`, and `message`. Constructed from a `RuleViolation` via `LintDiagnostic::from_violation()`, which combines the violation data with the rule name and file path.
-- **`cli.rs`** -- Orchestrates the lint pipeline: parses `std::env::args()` for an optional directory path argument (defaults to `"."`) and `--format text|json` via `parse_args`, validates the path is a directory, builds a `Registry`, registers default rules, walks the directory tree for `SKILL.md` files, runs each rule, collects `LintDiagnostic` structs into a `Vec`, then renders output (text lines or a single JSON array) based on the selected format
-- **`registry.rs`** -- Defines the `Registry` struct that holds `Vec<Box<dyn Rule>>`. The `Rule` trait is defined in `@/src/rules/mod.rs`.
-- **`rules/`** -- Submodule containing individual rule implementations; see `@/src/rules/docs.md`
+  - `RuleViolation`: produced by both `Rule::run()` and `LlmRule::evaluate()`, carries `message`, optional `line` number, and optional `snippet`. Internal type, not serializable.
+  - `LintDiagnostic`: the output-facing struct, derives `Serialize`. Contains `rule`, `file`, `line`, `snippet`, and `message`. Constructed from a `RuleViolation` via `LintDiagnostic::from_violation()`.
+- **`cli.rs`** -- Orchestrates the full lint pipeline: parses `std::env::args()` for directory path, `--format`, and `--config`; resolves config via `resolve_config()` (checks explicit path first, then auto-discovers `config.json` in CWD); builds a `Registry` of deterministic rules and (if config present) an `LlmRegistry` of LLM rules with an `AnthropicClient`; walks the directory tree for SKILL.md files; runs deterministic rules synchronously per file; runs LLM rules asynchronously per file via `run_llm_rules()`; collects all `LintDiagnostic` structs; renders output based on format.
+- **`config.rs`** -- Defines the `Config` struct (has `anthropic_api_key` field) and `load_config()` which reads a JSON file, parses it, and validates the API key is non-empty/non-blank.
+- **`llm_client.rs`** -- Defines the `LlmAnalyzer` trait (async `analyze()` method) and `AnthropicClient` implementation that POSTs to the Anthropic Messages API v1. `LlmError` enum covers HTTP and parse failures. `extract_text_from_response()` pulls the text content from the API response body.
+- **`llm_registry.rs`** -- `LlmRegistry` struct that holds `Vec<Box<dyn LlmRule>>` with `register()` and `rules()` methods. Same pattern as `Registry` but for `LlmRule` trait objects.
+- **`registry.rs`** -- `Registry` struct that holds `Vec<Box<dyn Rule>>`. The `Rule` trait is defined in `@/src/rules/mod.rs`.
+- **`rules/`** -- Submodule containing deterministic and LLM rule implementations; see `@/src/rules/docs.md`
 
 ### Things to Know
 
-- The `Rule` trait's `run` method receives the full file content as `&str` and returns `Option<RuleViolation>` -- `None` means the file passes, `Some` carries structured violation data (message, optional line, optional snippet)
-- `RuleViolation` is the boundary between rules and the CLI; `LintDiagnostic` is the boundary between the CLI and output. `LintDiagnostic::from_violation()` bridges the two by adding rule name and file path context.
-- `cli::run()` strips the root path prefix from discovered file paths before printing, so output shows relative paths like `subdir/SKILL.md` regardless of whether the root was `"."` or an absolute path argument
-- Adding a new rule requires: implementing the `Rule` trait (returning `RuleViolation`), re-exporting the module in `rules/mod.rs`, and registering it in `cli::run()`
-- `parse_args` in `cli.rs` defaults to `OutputFormat::Text` and root `"."` when no flags are present; returns `Err` for missing or invalid values
-- Invalid directory arguments produce an error message on stderr and exit code 1, before any linting occurs
+- `cli::run()` is async. The async boundary exists because LLM rules make HTTP calls via `reqwest`. Deterministic rules remain synchronous and are unaffected.
+- `resolve_config()` in `cli.rs` implements a two-step lookup: explicit `--config` path first, then `config.json` in CWD. If neither exists, `Ok(None)` is returned and LLM rules are skipped entirely.
+- The `LlmAnalyzer` trait uses `impl Future` in its return type (not `async_trait`), enabling dependency injection without the `async_trait` crate.
+- `RuleViolation` is the shared boundary type between both rule tiers and the CLI output pipeline.
+- Adding a new deterministic rule: implement `Rule`, re-export in `rules/mod.rs`, register in `cli::run()`.
+- Adding a new LLM rule: implement `LlmRule`, re-export in `rules/llm_rules/mod.rs`, register in `cli::run()` inside the `if config.is_some()` block.
 
 Created and maintained by Nori.
