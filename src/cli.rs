@@ -147,6 +147,10 @@ pub async fn run() -> i32 {
     registry.register(Box::new(RequiredTagsRule));
     registry.register(Box::new(UnclosedTagsRule));
 
+    if config.is_none() {
+        eprintln!("note: skipping LLM rules (no .nori-lint.json found; use --config to specify)");
+    }
+
     let llm_client = config
         .as_ref()
         .map(|c| AnthropicClient::new(c.anthropic_api_key.clone()));

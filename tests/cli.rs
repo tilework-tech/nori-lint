@@ -414,7 +414,12 @@ fn without_config_deterministic_rules_still_run() {
     fs::write(dir.path().join("SKILL.md"), small_skill_content()).unwrap();
     // No config.json present, no --config flag
     let mut cmd = cargo_bin_cmd!("nori-lint");
-    cmd.current_dir(dir.path()).assert().success();
+    cmd.current_dir(dir.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "note: skipping LLM rules (no .nori-lint.json found; use --config to specify)",
+        ));
 }
 
 #[test]
