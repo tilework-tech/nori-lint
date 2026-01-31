@@ -274,7 +274,7 @@ fn format_missing_value_prints_error() {
         .current_dir(dir.path())
         .assert()
         .failure()
-        .stderr(predicate::str::contains("--format requires a value"));
+        .stderr(predicate::str::contains("--format"));
 }
 
 #[test]
@@ -352,6 +352,48 @@ fn format_json_includes_required_tags_violation() {
             .unwrap()
             .contains("required")
     );
+}
+
+// === --help tests ===
+
+#[test]
+fn help_flag_prints_usage_and_exits_success() {
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Usage:"))
+        .stdout(predicate::str::contains("nori-lint"))
+        .stdout(predicate::str::contains("--format"))
+        .stdout(predicate::str::contains("line_count"))
+        .stdout(predicate::str::contains("required_tags"))
+        .stdout(predicate::str::contains("unclosed_tags"));
+}
+
+#[test]
+fn short_help_flag_prints_usage_and_exits_success() {
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    let help_output = cargo_bin_cmd!("nori-lint").arg("--help").output().unwrap();
+
+    let short_output = cmd.arg("-h").output().unwrap();
+
+    assert_eq!(help_output.stdout, short_output.stdout);
+    assert_eq!(help_output.status.code(), short_output.status.code());
+}
+
+#[test]
+fn help_flag_takes_priority_over_other_arguments() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), large_skill_content()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.arg("--help")
+        .arg("--format")
+        .arg("json")
+        .arg(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Usage:"));
 }
 
 // === unclosed_tags rule tests ===

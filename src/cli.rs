@@ -1,7 +1,8 @@
-use std::env;
 use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
+
+use clap::{Parser, ValueEnum};
 
 use crate::diagnostic::LintDiagnostic;
 use crate::registry::Registry;
@@ -9,71 +10,56 @@ use crate::rules::line_count::LineCountRule;
 use crate::rules::required_tags::RequiredTagsRule;
 use crate::rules::unclosed_tags::UnclosedTagsRule;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, ValueEnum)]
 enum OutputFormat {
     Text,
     Json,
 }
 
-fn match_format_value(value: &str) -> Result<OutputFormat, String> {
-    match value {
-        "text" => Ok(OutputFormat::Text),
-        "json" => Ok(OutputFormat::Json),
-        other => Err(format!("invalid format '{other}': expected text or json")),
-    }
-}
-
-struct CliArgs {
-    format: OutputFormat,
-    root: String,
-}
-
-fn parse_args(args: &[String]) -> Result<CliArgs, String> {
-    let mut format = OutputFormat::Text;
-    let mut root = ".".to_string();
-    let mut i = 0;
-    while i < args.len() {
-        if let Some(val) = args[i].strip_prefix("--format=") {
-            format = match_format_value(val)?;
-        } else if args[i] == "--format" {
-            if i + 1 >= args.len() {
-                return Err("--format requires a value (text or json)".to_string());
-            }
-            format = match_format_value(&args[i + 1])?;
-            i += 1;
-        } else if !args[i].starts_with('-') {
-            root = args[i].clone();
-        }
-        i += 1;
-    }
-    Ok(CliArgs { format, root })
-}
-
-pub fn run() -> i32 {
-    let args: Vec<String> = env::args().skip(1).collect();
-
-    let cli = match parse_args(&args) {
-        Ok(c) => c,
-        Err(msg) => {
-            eprintln!("error: {msg}");
-            return 1;
-        }
-    };
-
-    let root_path = Path::new(&cli.root);
-
-    if !root_path.exists() {
-        eprintln!("error: {} does not exist", cli.root);
-        return 1;
-    } else if !root_path.is_dir() {
-        eprintln!("error: {} is not a directory", cli.root);
-        return 1;
-    }
-
+fn default_registry() -> Registry {
     let mut registry = Registry::new();
     registry.register(Box::new(LineCountRule));
     registry.register(Box::new(RequiredTagsRule));
     registry.register(Box::new(UnclosedTagsRule));
+    registry
+}
+
+fn build_rules_help() -> String {
+    let registry = default_registry();
+    let mut lines = vec!["Rules:".to_string()];
+    for rule in registry.rules() {
+        lines.push(format!("  {:20} {}", rule.name(), rule.description()));
+    }
+    lines.join("\n")
+}
+
+/// Lint SKILL.md files for common issues
+#[derive(Parser, Debug)]
+#[command(name = "nori-lint", after_help = build_rules_help())]
+struct Cli {
+    /// Output format
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    format: OutputFormat,
+
+    /// Directory to lint
+    #[arg(default_value = ".")]
+    path: String,
+}
+
+pub fn run() -> i32 {
+    let cli = Cli::parse();
+
+    let root_path = Path::new(&cli.path);
+
+    if !root_path.exists() {
+        eprintln!("error: {} does not exist", cli.path);
+        return 1;
+    } else if !root_path.is_dir() {
+        eprintln!("error: {} is not a directory", cli.path);
+        return 1;
+    }
+
+    let registry = default_registry();
 
     let mut diagnostics: Vec<LintDiagnostic> = Vec::new();
     let mut has_read_error = false;
