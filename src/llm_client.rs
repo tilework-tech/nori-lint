@@ -3,7 +3,7 @@ use std::fmt;
 use std::time::Duration;
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
-const MODEL: &str = "claude-sonnet-4-20250514";
+const MODEL: &str = "claude-opus-4-5-20251101";
 const MAX_TOKENS: u32 = 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -122,7 +122,7 @@ mod tests {
             ]
         });
 
-        assert_eq!(body["model"], "claude-sonnet-4-20250514");
+        assert_eq!(body["model"], "claude-opus-4-5-20251101");
         assert_eq!(body["max_tokens"], 1024);
         assert_eq!(body["system"], system_prompt);
         assert_eq!(body["messages"][0]["role"], "user");
@@ -142,7 +142,7 @@ mod tests {
                         "text": "{\"has_violations\": false, \"explanations\": []}"
                     }
                 ],
-                "model": "claude-sonnet-4-20250514",
+                "model": "claude-opus-4-5-20251101",
                 "stop_reason": "end_turn",
                 "usage": {"input_tokens": 100, "output_tokens": 50}
             }"#,

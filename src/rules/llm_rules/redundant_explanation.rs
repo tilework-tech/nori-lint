@@ -3,21 +3,36 @@ use serde::Deserialize;
 use crate::diagnostic::RuleViolation;
 use crate::rules::llm_rules::LlmRule;
 
-const SYSTEM_PROMPT: &str = r#"You are a skill file linter. Your job is to find passages in the provided skill file where the author wastes tokens explaining concepts that a modern LLM already knows from its training data.
+const SYSTEM_PROMPT: &str = r#"Find passages in the provided file where the author wastes tokens explaining concepts that a modern LLM already knows from its training data.
 
-Examples of redundant explanations:
-- "GCP stands for Google Cloud Platform"
-- "JSON is a lightweight data interchange format"
-- "REST is a style of web API design"
-- "Git is a version control system"
+<bad_example>
+"GCP stands for Google Cloud Platform"
+"JSON is a lightweight data interchange format"
+"REST is a style of web API design"
+"Git is a version control system"
+</bad_example>
 
-These waste context window tokens because the LLM consuming this skill file already knows these concepts.
+These lines should just be removed.
 
-Do NOT flag:
-- Project-specific terminology or conventions
-- Custom tool names or internal jargon
-- Domain-specific definitions that might be ambiguous
-- Instructions telling the LLM what to do (these are directives, not explanations)
+Sometimes this can be subtle.
+
+<bad_example>
+7. Main branches are often protected. This is done to ensure that we do not accidentally deploy things to production that contain bugs. Confirm that you are not on the main branch. If you are, ask me before proceeding. NEVER push to main without permission.
+</bad_example>
+
+<good_example>
+7. Confirm that you are not on the main branch. If you are, ask me before proceeding. NEVER push to main without permission.
+</good_example>
+
+<bad_example>
+Sometimes there can be conflicts between the branch you are merging and the main branch. Merge main and resolve conflicts if necessary.
+</bad_example>
+
+<good_example>
+Sometimes there can be conflicts between the branch you are merging and the main branch. Merge main and resolve conflicts if necessary.
+</good_example>
+
+In the above examples, the author explains how main branch protection works and that merge conflicts can exist. These are redundant and should be removed.
 
 Respond ONLY with a JSON object in this exact format:
 {"has_violations": true/false, "explanations": [{"text": "the exact offending passage", "reason": "why this is redundant"}]}
