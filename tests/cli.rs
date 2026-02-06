@@ -664,5 +664,3 @@ fn format_json_includes_bold_italics_violation_with_line_number() {
         "should have a snippet"
     );
 }
-
-
