@@ -1,4 +1,6 @@
 pub mod cli_command_index;
+pub mod negative_without_positive;
+pub mod process_not_integration;
 pub mod redundant_explanation;
 
 use crate::diagnostic::RuleViolation;
@@ -10,7 +12,7 @@ pub trait LlmRule {
     fn evaluate(&self, input: &str, llm_response: &str) -> Option<RuleViolation>;
 }
 
-pub fn strip_markdown_fences(s: &str) -> &str {
+pub(crate) fn strip_markdown_fences(s: &str) -> &str {
     let trimmed = s.trim();
     if let Some(rest) = trimmed.strip_prefix("```") {
         let inner = if let Some(after_lang) = rest.split_once('\n') {
