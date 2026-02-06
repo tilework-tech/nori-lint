@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 use crate::diagnostic::RuleViolation;
-use crate::rules::llm_rules::LlmRule;
+use crate::rules::llm_rules::{LlmRule, strip_markdown_fences};
 
 const SYSTEM_PROMPT: &str = r#"Determine whether the provided SKILL.md file is an "integration" (a reference manual) or a "process" (a step-by-step workflow).
 
@@ -42,20 +42,6 @@ struct Evidence {
     text: String,
     #[allow(dead_code)]
     reason: String,
-}
-
-fn strip_markdown_fences(s: &str) -> &str {
-    let trimmed = s.trim();
-    if let Some(rest) = trimmed.strip_prefix("```") {
-        let inner = if let Some(after_lang) = rest.split_once('\n') {
-            after_lang.1
-        } else {
-            rest
-        };
-        inner.strip_suffix("```").unwrap_or(inner).trim()
-    } else {
-        trimmed
-    }
 }
 
 pub struct ProcessNotIntegrationRule;
