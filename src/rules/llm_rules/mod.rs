@@ -1,6 +1,7 @@
 pub mod cli_command_index;
 pub mod first_person;
 pub mod negative_without_positive;
+pub mod obvious_instructions;
 pub mod process_not_integration;
 pub mod redundant_explanation;
 

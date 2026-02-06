@@ -14,6 +14,7 @@ use crate::rules::line_count::LineCountRule;
 use crate::rules::llm_rules::cli_command_index::CliCommandIndexRule;
 use crate::rules::llm_rules::first_person::FirstPersonRule;
 use crate::rules::llm_rules::negative_without_positive::NegativeWithoutPositiveRule;
+use crate::rules::llm_rules::obvious_instructions::ObviousInstructionsRule;
 use crate::rules::llm_rules::process_not_integration::ProcessNotIntegrationRule;
 use crate::rules::llm_rules::redundant_explanation::RedundantExplanationRule;
 use crate::rules::redundant_title::RedundantTitleRule;
@@ -144,6 +145,7 @@ pub async fn run() -> i32 {
             r.register(Box::new(CliCommandIndexRule));
             r.register(Box::new(FirstPersonRule));
             r.register(Box::new(NegativeWithoutPositiveRule));
+            r.register(Box::new(ObviousInstructionsRule));
             r.register(Box::new(ProcessNotIntegrationRule));
             r.register(Box::new(RedundantExplanationRule));
         }
