@@ -11,6 +11,7 @@ use crate::llm_registry::LlmRegistry;
 use crate::registry::Registry;
 use crate::rules::bold_italics::BoldItalicsRule;
 use crate::rules::line_count::LineCountRule;
+use crate::rules::llm_rules::cli_command_index::CliCommandIndexRule;
 use crate::rules::llm_rules::negative_without_positive::NegativeWithoutPositiveRule;
 use crate::rules::llm_rules::process_not_integration::ProcessNotIntegrationRule;
 use crate::rules::llm_rules::redundant_explanation::RedundantExplanationRule;
@@ -139,6 +140,7 @@ pub async fn run() -> i32 {
     let llm_registry = {
         let mut r = LlmRegistry::new();
         if config.is_some() {
+            r.register(Box::new(CliCommandIndexRule));
             r.register(Box::new(NegativeWithoutPositiveRule));
             r.register(Box::new(ProcessNotIntegrationRule));
             r.register(Box::new(RedundantExplanationRule));
