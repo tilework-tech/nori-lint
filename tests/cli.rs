@@ -558,3 +558,66 @@ fn nori_lint_json_in_cwd_is_auto_discovered() {
         .failure()
         .stderr(predicate::str::contains("anthropic_api_key"));
 }
+
+// === bold_italics rule tests ===
+
+fn skill_with_bold_text() -> String {
+    "---\nname: Test Skill\ndescription: A test skill\n---\n\n<required>\nSome **bold** content.\n</required>\n"
+        .to_string()
+}
+
+#[test]
+fn exits_failure_for_skill_file_with_bold_text() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), skill_with_bold_text()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.current_dir(dir.path())
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("bold_italics"));
+}
+
+#[test]
+fn format_json_includes_bold_italics_violation_with_line_number() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), skill_with_bold_text()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    let output = cmd
+        .arg("--format")
+        .arg("json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output should be valid JSON");
+
+    let arr = parsed.as_array().expect("output should be a JSON array");
+    let bold_diag = arr
+        .iter()
+        .find(|d| d["rule"] == "bold_italics")
+        .expect("should contain a bold_italics violation");
+    assert_eq!(bold_diag["file"], "SKILL.md");
+    assert!(
+        bold_diag["line"].as_u64().is_some(),
+        "should have a line number"
+    );
+    assert!(
+        bold_diag["snippet"].as_str().is_some(),
+        "should have a snippet"
+    );
+}
+
+#[test]
+fn help_includes_bold_italics_rule() {
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bold_italics"));
+}

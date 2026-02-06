@@ -12,18 +12,18 @@ impl Rule for RequiredTagsRule {
         "Checks that SKILL.md files contain at least one <required> block"
     }
 
-    fn run(&self, input: &str) -> Option<RuleViolation> {
+    fn run(&self, input: &str) -> Vec<RuleViolation> {
         let has_open = input.contains("<required>");
         let has_close = input.contains("</required>");
 
         if has_open && has_close {
-            None
+            vec![]
         } else {
-            Some(RuleViolation {
+            vec![RuleViolation {
                 message: "File is missing a <required> block".to_string(),
                 line: None,
                 snippet: None,
-            })
+            }]
         }
     }
 }
@@ -33,10 +33,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn returns_none_when_required_tags_present() {
+    fn returns_empty_when_required_tags_present() {
         let rule = RequiredTagsRule;
         let content = "---\nname: Test\n---\n\n<required>\nDo things.\n</required>\n";
-        assert!(rule.run(content).is_none());
+        assert!(rule.run(content).is_empty());
     }
 
     #[test]
@@ -44,21 +44,20 @@ mod tests {
         let rule = RequiredTagsRule;
         let content = "---\nname: Test\n---\n\nSome content without required tags.\n";
         let result = rule.run(content);
-        assert!(result.is_some(), "should flag missing <required> tags");
-        let violation = result.unwrap();
+        assert_eq!(result.len(), 1, "should flag missing <required> tags");
         assert!(
-            violation.message.contains("required"),
+            result[0].message.contains("required"),
             "message should mention required tags, got: {}",
-            violation.message
+            result[0].message
         );
     }
 
     #[test]
-    fn returns_none_when_multiple_required_pairs() {
+    fn returns_empty_when_multiple_required_pairs() {
         let rule = RequiredTagsRule;
         let content =
             "<required>\nFirst block.\n</required>\n\n<required>\nSecond block.\n</required>\n";
-        assert!(rule.run(content).is_none());
+        assert!(rule.run(content).is_empty());
     }
 
     #[test]
