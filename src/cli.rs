@@ -12,11 +12,14 @@ use crate::registry::Registry;
 use crate::rules::bold_italics::BoldItalicsRule;
 use crate::rules::line_count::LineCountRule;
 use crate::rules::llm_rules::cli_command_index::CliCommandIndexRule;
+use crate::rules::llm_rules::duplicate_section::DuplicateSectionRule;
 use crate::rules::llm_rules::first_person::FirstPersonRule;
 use crate::rules::llm_rules::negative_without_positive::NegativeWithoutPositiveRule;
 use crate::rules::llm_rules::obvious_instructions::ObviousInstructionsRule;
 use crate::rules::llm_rules::process_not_integration::ProcessNotIntegrationRule;
 use crate::rules::llm_rules::redundant_explanation::RedundantExplanationRule;
+use crate::rules::llm_rules::unexplained_url::UnexplainedUrlRule;
+use crate::rules::markdown_links::MarkdownLinksRule;
 use crate::rules::redundant_title::RedundantTitleRule;
 use crate::rules::required_tags::RequiredTagsRule;
 use crate::rules::unclosed_tags::UnclosedTagsRule;
@@ -31,6 +34,7 @@ fn default_registry() -> Registry {
     let mut registry = Registry::new();
     registry.register(Box::new(BoldItalicsRule));
     registry.register(Box::new(LineCountRule));
+    registry.register(Box::new(MarkdownLinksRule));
     registry.register(Box::new(RedundantTitleRule));
     registry.register(Box::new(RequiredTagsRule));
     registry.register(Box::new(UnclosedTagsRule));
@@ -143,11 +147,13 @@ pub async fn run() -> i32 {
         let mut r = LlmRegistry::new();
         if config.is_some() {
             r.register(Box::new(CliCommandIndexRule));
+            r.register(Box::new(DuplicateSectionRule));
             r.register(Box::new(FirstPersonRule));
             r.register(Box::new(NegativeWithoutPositiveRule));
             r.register(Box::new(ObviousInstructionsRule));
             r.register(Box::new(ProcessNotIntegrationRule));
             r.register(Box::new(RedundantExplanationRule));
+            r.register(Box::new(UnexplainedUrlRule));
         }
         r
     };

@@ -684,3 +684,66 @@ fn help_includes_bold_italics_rule() {
         .success()
         .stdout(predicate::str::contains("bold_italics"));
 }
+
+// === markdown_links rule tests ===
+
+fn skill_with_markdown_link() -> String {
+    "---\nname: Test Skill\ndescription: A test skill\n---\n\n<required>\nSee [the docs](https://example.com) for details.\n</required>\n"
+        .to_string()
+}
+
+#[test]
+fn exits_failure_for_skill_file_with_markdown_link() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), skill_with_markdown_link()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.current_dir(dir.path())
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("markdown_links"));
+}
+
+#[test]
+fn format_json_includes_markdown_links_violation_with_line_number() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), skill_with_markdown_link()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    let output = cmd
+        .arg("--format")
+        .arg("json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output should be valid JSON");
+
+    let arr = parsed.as_array().expect("output should be a JSON array");
+    let link_diag = arr
+        .iter()
+        .find(|d| d["rule"] == "markdown_links")
+        .expect("should contain a markdown_links violation");
+    assert_eq!(link_diag["file"], "SKILL.md");
+    assert!(
+        link_diag["line"].as_u64().is_some(),
+        "should have a line number"
+    );
+    assert!(
+        link_diag["snippet"].as_str().is_some(),
+        "should have a snippet"
+    );
+}
+
+#[test]
+fn help_includes_markdown_links_rule() {
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("markdown_links"));
+}
