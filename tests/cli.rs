@@ -365,9 +365,7 @@ fn help_flag_prints_usage_and_exits_success() {
         .stdout(predicate::str::contains("Usage:"))
         .stdout(predicate::str::contains("nori-lint"))
         .stdout(predicate::str::contains("--format"))
-        .stdout(predicate::str::contains("line_count"))
-        .stdout(predicate::str::contains("required_tags"))
-        .stdout(predicate::str::contains("unclosed_tags"));
+        .stdout(predicate::str::contains("Rules:").not());
 }
 
 #[test]
@@ -596,15 +594,6 @@ fn format_json_includes_redundant_title_violation() {
 }
 
 #[test]
-fn help_flag_includes_redundant_title_rule() {
-    let mut cmd = cargo_bin_cmd!("nori-lint");
-    cmd.arg("--help")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("redundant_title"));
-}
-
-#[test]
 fn nori_lint_json_in_cwd_is_auto_discovered() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join("SKILL.md"), small_skill_content()).unwrap();
@@ -623,6 +612,214 @@ fn nori_lint_json_in_cwd_is_auto_discovered() {
 }
 
 // === bold_italics rule tests ===
+
+// === rules config (enable/disable) tests ===
+
+fn valid_config_with_disabled_rules(disabled: &[&str]) -> String {
+    let rules: Vec<String> = disabled.iter().map(|r| format!("\"{}\"", r)).collect();
+    format!(
+        r#"{{"anthropic_api_key": "sk-ant-fake-key", "rules": {{"disabled": [{}]}}}}"#,
+        rules.join(", ")
+    )
+}
+
+fn valid_config_with_enabled_rules(enabled: &[&str]) -> String {
+    let rules: Vec<String> = enabled.iter().map(|r| format!("\"{}\"", r)).collect();
+    format!(
+        r#"{{"anthropic_api_key": "sk-ant-fake-key", "rules": {{"enabled": [{}]}}}}"#,
+        rules.join(", ")
+    )
+}
+
+#[test]
+fn disabled_rule_does_not_produce_diagnostics() {
+    let dir = TempDir::new().unwrap();
+    // This file triggers bold_italics violation
+    fs::write(dir.path().join("SKILL.md"), skill_with_bold_text()).unwrap();
+    fs::write(
+        dir.path().join(".nori-lint.json"),
+        valid_config_with_disabled_rules(&["bold_italics"]),
+    )
+    .unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    let output = cmd
+        .arg("--format")
+        .arg("json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output should be valid JSON");
+    let arr = parsed.as_array().expect("output should be a JSON array");
+
+    assert!(
+        !arr.iter().any(|d| d["rule"] == "bold_italics"),
+        "bold_italics should be suppressed when disabled, got: {stdout}"
+    );
+}
+
+#[test]
+fn non_disabled_rules_still_fire() {
+    let dir = TempDir::new().unwrap();
+    // This file triggers both bold_italics AND required_tags (no <required> tags and has bold text)
+    fs::write(
+        dir.path().join("SKILL.md"),
+        "---\nname: Test\ndescription: test\n---\n\nSome **bold** content.\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join(".nori-lint.json"),
+        valid_config_with_disabled_rules(&["bold_italics"]),
+    )
+    .unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    let output = cmd
+        .arg("--format")
+        .arg("json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output should be valid JSON");
+    let arr = parsed.as_array().expect("output should be a JSON array");
+
+    assert!(
+        !arr.iter().any(|d| d["rule"] == "bold_italics"),
+        "bold_italics should be suppressed"
+    );
+    assert!(
+        arr.iter().any(|d| d["rule"] == "required_tags"),
+        "required_tags should still fire"
+    );
+}
+
+#[test]
+fn enabled_rules_only_runs_specified_rules() {
+    let dir = TempDir::new().unwrap();
+    // This file triggers both required_tags AND bold_italics violations
+    fs::write(
+        dir.path().join("SKILL.md"),
+        "---\nname: Test\ndescription: test\n---\n\nSome **bold** content.\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join(".nori-lint.json"),
+        valid_config_with_enabled_rules(&["required_tags"]),
+    )
+    .unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    let output = cmd
+        .arg("--format")
+        .arg("json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output should be valid JSON");
+    let arr = parsed.as_array().expect("output should be a JSON array");
+
+    assert!(
+        arr.iter().any(|d| d["rule"] == "required_tags"),
+        "required_tags should fire when in enabled list"
+    );
+    assert!(
+        !arr.iter().any(|d| d["rule"] == "bold_italics"),
+        "bold_italics should NOT fire when not in enabled list"
+    );
+}
+
+#[test]
+fn config_with_both_enabled_and_disabled_prints_error() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), small_skill_content()).unwrap();
+    fs::write(
+        dir.path().join(".nori-lint.json"),
+        r#"{"anthropic_api_key": "sk-ant-fake", "rules": {"enabled": ["required_tags"], "disabled": ["bold_italics"]}}"#,
+    )
+    .unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("enabled").and(predicate::str::contains("disabled")));
+}
+
+#[test]
+fn config_without_rules_field_runs_all_deterministic_rules() {
+    let dir = TempDir::new().unwrap();
+    // This file triggers bold_italics violation
+    fs::write(dir.path().join("SKILL.md"), skill_with_bold_text()).unwrap();
+    // Config with only API key (no rules field) — should still run all rules
+    fs::write(
+        dir.path().join(".nori-lint.json"),
+        r#"{"anthropic_api_key": "sk-ant-fake-key"}"#,
+    )
+    .unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    let output = cmd
+        .arg("--format")
+        .arg("json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output should be valid JSON");
+    let arr = parsed.as_array().expect("output should be a JSON array");
+
+    assert!(
+        arr.iter().any(|d| d["rule"] == "bold_italics"),
+        "bold_italics should fire when no rules config present"
+    );
+}
+
+#[test]
+fn unknown_rule_in_disabled_list_emits_warning() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), small_skill_content()).unwrap();
+    fs::write(
+        dir.path().join(".nori-lint.json"),
+        r#"{"anthropic_api_key": "sk-ant-fake-key", "rules": {"disabled": ["nonexistent_rule"]}}"#,
+    )
+    .unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.current_dir(dir.path())
+        .assert()
+        .stderr(predicate::str::contains("nonexistent_rule"));
+}
+
+#[test]
+fn unknown_rule_in_enabled_list_emits_warning() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), small_skill_content()).unwrap();
+    fs::write(
+        dir.path().join(".nori-lint.json"),
+        r#"{"anthropic_api_key": "sk-ant-fake-key", "rules": {"enabled": ["nonexistent_rule"]}}"#,
+    )
+    .unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.current_dir(dir.path())
+        .assert()
+        .stderr(predicate::str::contains("nonexistent_rule"));
+}
 
 fn skill_with_bold_text() -> String {
     "---\nname: Test Skill\ndescription: A test skill\n---\n\n<required>\nSome **bold** content.\n</required>\n"
@@ -674,15 +871,6 @@ fn format_json_includes_bold_italics_violation_with_line_number() {
         bold_diag["snippet"].as_str().is_some(),
         "should have a snippet"
     );
-}
-
-#[test]
-fn help_includes_bold_italics_rule() {
-    let mut cmd = cargo_bin_cmd!("nori-lint");
-    cmd.arg("--help")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("bold_italics"));
 }
 
 // === markdown_links rule tests ===
@@ -737,13 +925,4 @@ fn format_json_includes_markdown_links_violation_with_line_number() {
         link_diag["snippet"].as_str().is_some(),
         "should have a snippet"
     );
-}
-
-#[test]
-fn help_includes_markdown_links_rule() {
-    let mut cmd = cargo_bin_cmd!("nori-lint");
-    cmd.arg("--help")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("markdown_links"));
 }

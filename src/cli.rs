@@ -41,18 +41,9 @@ fn default_registry() -> Registry {
     registry
 }
 
-fn build_rules_help() -> String {
-    let registry = default_registry();
-    let mut lines = vec!["Rules:".to_string()];
-    for rule in registry.rules() {
-        lines.push(format!("  {:20} {}", rule.name(), rule.description()));
-    }
-    lines.join("\n")
-}
-
 /// Lint SKILL.md files for common issues
 #[derive(Parser, Debug)]
-#[command(name = "nori-lint", after_help = build_rules_help())]
+#[command(name = "nori-lint")]
 struct Cli {
     /// Output format
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
@@ -85,12 +76,16 @@ fn resolve_config(cli_config_path: Option<&str>) -> Result<Option<Config>, Strin
 async fn run_llm_rules<A: LlmAnalyzer>(
     client: &A,
     llm_registry: &LlmRegistry,
+    config: &Config,
     content: &str,
     display_str: &str,
     diagnostics: &mut Vec<LintDiagnostic>,
     has_llm_error: &mut bool,
 ) {
     for rule in llm_registry.rules() {
+        if !config.is_rule_enabled(rule.name()) {
+            continue;
+        }
         match client.analyze(rule.system_prompt(), content).await {
             Ok(response) => {
                 if let Some(violation) = rule.evaluate(content, &response) {
@@ -158,6 +153,24 @@ pub async fn run() -> i32 {
         r
     };
 
+    if let Some(cfg) = &config {
+        let mut all_known_rules: Vec<&str> = registry.rules().iter().map(|r| r.name()).collect();
+        all_known_rules.extend(llm_registry.rules().iter().map(|r| r.name()));
+
+        if let Some(rules_config) = &cfg.rules {
+            let names_to_check = rules_config
+                .enabled
+                .as_deref()
+                .or(rules_config.disabled.as_deref())
+                .unwrap_or(&[]);
+            for name in names_to_check {
+                if !all_known_rules.contains(&name.as_str()) {
+                    eprintln!("warning: unknown rule '{}' in config", name);
+                }
+            }
+        }
+    }
+
     let mut diagnostics: Vec<LintDiagnostic> = Vec::new();
     let mut has_read_error = false;
     let mut has_llm_error = false;
@@ -170,6 +183,12 @@ pub async fn run() -> i32 {
             match fs::read_to_string(path) {
                 Ok(content) => {
                     for rule in registry.rules() {
+                        if config
+                            .as_ref()
+                            .is_some_and(|c| !c.is_rule_enabled(rule.name()))
+                        {
+                            continue;
+                        }
                         for violation in rule.run(&content) {
                             diagnostics.push(LintDiagnostic::from_violation(
                                 &violation,
@@ -179,10 +198,11 @@ pub async fn run() -> i32 {
                         }
                     }
 
-                    if let Some(client) = &llm_client {
+                    if let (Some(client), Some(cfg)) = (&llm_client, config.as_ref()) {
                         run_llm_rules(
                             client,
                             &llm_registry,
+                            cfg,
                             &content,
                             &display_str,
                             &mut diagnostics,
