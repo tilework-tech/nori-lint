@@ -1,5 +1,6 @@
 pub mod line_count;
 pub mod llm_rules;
+pub mod redundant_title;
 pub mod required_tags;
 pub mod unclosed_tags;
 

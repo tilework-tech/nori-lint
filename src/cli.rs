@@ -13,6 +13,7 @@ use crate::rules::line_count::LineCountRule;
 use crate::rules::llm_rules::negative_without_positive::NegativeWithoutPositiveRule;
 use crate::rules::llm_rules::process_not_integration::ProcessNotIntegrationRule;
 use crate::rules::llm_rules::redundant_explanation::RedundantExplanationRule;
+use crate::rules::redundant_title::RedundantTitleRule;
 use crate::rules::required_tags::RequiredTagsRule;
 use crate::rules::unclosed_tags::UnclosedTagsRule;
 
@@ -25,6 +26,7 @@ enum OutputFormat {
 fn default_registry() -> Registry {
     let mut registry = Registry::new();
     registry.register(Box::new(LineCountRule));
+    registry.register(Box::new(RedundantTitleRule));
     registry.register(Box::new(RequiredTagsRule));
     registry.register(Box::new(UnclosedTagsRule));
     registry
