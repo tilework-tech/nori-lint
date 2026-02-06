@@ -541,6 +541,69 @@ fn config_flag_missing_value_prints_error() {
         .stderr(predicate::str::contains("--config"));
 }
 
+// === redundant_title rule tests ===
+
+fn skill_with_redundant_title() -> String {
+    "---\nname: Test Skill\ndescription: A test skill\n---\n\n# The Test Skill\n\n<required>\nSome content.\n</required>\n"
+        .to_string()
+}
+
+#[test]
+fn exits_failure_for_skill_file_with_redundant_title() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), skill_with_redundant_title()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.current_dir(dir.path())
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("redundant_title"));
+}
+
+#[test]
+fn format_json_includes_redundant_title_violation() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("SKILL.md"), skill_with_redundant_title()).unwrap();
+
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    let output = cmd
+        .arg("--format")
+        .arg("json")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output should be valid JSON");
+
+    let arr = parsed.as_array().expect("output should be a JSON array");
+    let title_diag = arr
+        .iter()
+        .find(|d| d["rule"] == "redundant_title")
+        .expect("should contain a redundant_title violation");
+    assert_eq!(title_diag["file"], "SKILL.md");
+    assert!(
+        title_diag["line"].as_u64().is_some(),
+        "should have a line number"
+    );
+    assert!(
+        title_diag["snippet"].as_str().is_some(),
+        "should have a snippet"
+    );
+}
+
+#[test]
+fn help_flag_includes_redundant_title_rule() {
+    let mut cmd = cargo_bin_cmd!("nori-lint");
+    cmd.arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("redundant_title"));
+}
+
 #[test]
 fn nori_lint_json_in_cwd_is_auto_discovered() {
     let dir = TempDir::new().unwrap();

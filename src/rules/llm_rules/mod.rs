@@ -1,4 +1,5 @@
 pub mod negative_without_positive;
+pub mod process_not_integration;
 pub mod redundant_explanation;
 
 use crate::diagnostic::RuleViolation;

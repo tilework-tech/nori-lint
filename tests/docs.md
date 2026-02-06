@@ -18,7 +18,7 @@ Path: @/tests
 
 - `cli.rs` uses `tempfile::TempDir` to create isolated filesystem environments, writes SKILL.md files with known content, then runs the `nori-lint` binary via `assert_cmd`
 - Tests exercise the binary in two modes: via `current_dir` (setting the working directory for implicit root) and via `.arg()` (passing an explicit directory path argument)
-- Helper functions create SKILL.md fixtures that target specific rule behaviors: valid skills (small, well-formed), oversized skills (exceeding 150-line limit), skills missing `<required>` tags, skills with unclosed tags, and skills with bold/italic markdown formatting
+- Helper functions create SKILL.md fixtures that target specific rule behaviors: valid skills (small, well-formed), oversized skills (exceeding 150-line limit), skills missing `<required>` tags, skills with unclosed tags, skills with bold/italic markdown formatting, and skills with redundant title headings
 - Tests are organized into groups covering: default/text format output, directory argument handling, `--format json` output shape and field validation, `--help`/`-h` flag behavior, per-rule violation detection, and `--config` flag behavior
 - Config integration tests verify: deterministic rules still run without config (with stderr note), `--config` with nonexistent file errors, invalid JSON errors, missing `anthropic_api_key` field errors, `--config=` equals syntax, `--config` with missing value, and auto-discovery of `.nori-lint.json` in the working directory
 - JSON tests parse stdout with `serde_json` and assert on the array structure and individual diagnostic fields (`rule`, `file`, `message`, `line`, `snippet`)
