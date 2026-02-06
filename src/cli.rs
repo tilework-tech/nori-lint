@@ -9,8 +9,10 @@ use crate::diagnostic::LintDiagnostic;
 use crate::llm_client::{AnthropicClient, LlmAnalyzer};
 use crate::llm_registry::LlmRegistry;
 use crate::registry::Registry;
+use crate::rules::bold_italics::BoldItalicsRule;
 use crate::rules::line_count::LineCountRule;
 use crate::rules::llm_rules::cli_command_index::CliCommandIndexRule;
+use crate::rules::llm_rules::first_person::FirstPersonRule;
 use crate::rules::llm_rules::negative_without_positive::NegativeWithoutPositiveRule;
 use crate::rules::llm_rules::obvious_instructions::ObviousInstructionsRule;
 use crate::rules::llm_rules::process_not_integration::ProcessNotIntegrationRule;
@@ -27,6 +29,7 @@ enum OutputFormat {
 
 fn default_registry() -> Registry {
     let mut registry = Registry::new();
+    registry.register(Box::new(BoldItalicsRule));
     registry.register(Box::new(LineCountRule));
     registry.register(Box::new(RedundantTitleRule));
     registry.register(Box::new(RequiredTagsRule));
@@ -140,6 +143,7 @@ pub async fn run() -> i32 {
         let mut r = LlmRegistry::new();
         if config.is_some() {
             r.register(Box::new(CliCommandIndexRule));
+            r.register(Box::new(FirstPersonRule));
             r.register(Box::new(NegativeWithoutPositiveRule));
             r.register(Box::new(ObviousInstructionsRule));
             r.register(Box::new(ProcessNotIntegrationRule));
@@ -160,7 +164,7 @@ pub async fn run() -> i32 {
             match fs::read_to_string(path) {
                 Ok(content) => {
                     for rule in registry.rules() {
-                        if let Some(violation) = rule.run(&content) {
+                        for violation in rule.run(&content) {
                             diagnostics.push(LintDiagnostic::from_violation(
                                 &violation,
                                 rule.name(),

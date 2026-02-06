@@ -14,7 +14,7 @@ impl Rule for UnclosedTagsRule {
         "Checks that all opened XML-style tags have corresponding closing tags"
     }
 
-    fn run(&self, input: &str) -> Option<RuleViolation> {
+    fn run(&self, input: &str) -> Vec<RuleViolation> {
         let mut open_counts: HashMap<&str, usize> = HashMap::new();
         let mut close_counts: HashMap<&str, usize> = HashMap::new();
 
@@ -58,13 +58,13 @@ impl Rule for UnclosedTagsRule {
         mismatched.sort();
 
         if mismatched.is_empty() {
-            None
+            vec![]
         } else {
-            Some(RuleViolation {
+            vec![RuleViolation {
                 message: format!("Unclosed or unmatched tags: {}", mismatched.join("; ")),
                 line: None,
                 snippet: None,
-            })
+            }]
         }
     }
 }
@@ -74,10 +74,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn returns_none_when_all_tags_closed() {
+    fn returns_empty_when_all_tags_closed() {
         let rule = UnclosedTagsRule;
         let content = "<required>\nContent.\n</required>\n";
-        assert!(rule.run(content).is_none());
+        assert!(rule.run(content).is_empty());
     }
 
     #[test]
@@ -85,12 +85,11 @@ mod tests {
         let rule = UnclosedTagsRule;
         let content = "<required>\nContent without closing tag.\n";
         let result = rule.run(content);
-        assert!(result.is_some(), "should flag unclosed <required> tag");
-        let violation = result.unwrap();
+        assert_eq!(result.len(), 1, "should flag unclosed <required> tag");
         assert!(
-            violation.message.contains("required"),
+            result[0].message.contains("required"),
             "message should mention the unclosed tag name, got: {}",
-            violation.message
+            result[0].message
         );
     }
 
@@ -99,20 +98,19 @@ mod tests {
         let rule = UnclosedTagsRule;
         let content = "Content.\n</required>\n";
         let result = rule.run(content);
-        assert!(result.is_some(), "should flag closing tag without opener");
-        let violation = result.unwrap();
+        assert_eq!(result.len(), 1, "should flag closing tag without opener");
         assert!(
-            violation.message.contains("required"),
+            result[0].message.contains("required"),
             "message should mention the orphan tag name, got: {}",
-            violation.message
+            result[0].message
         );
     }
 
     #[test]
-    fn returns_none_with_multiple_different_tags_all_closed() {
+    fn returns_empty_with_multiple_different_tags_all_closed() {
         let rule = UnclosedTagsRule;
         let content = "<required>\nStuff.\n</required>\n\n<system-reminder>\nMore stuff.\n</system-reminder>\n";
-        assert!(rule.run(content).is_none());
+        assert!(rule.run(content).is_empty());
     }
 
     #[test]
@@ -120,30 +118,30 @@ mod tests {
         let rule = UnclosedTagsRule;
         let content = "<required>\nStuff.\n</required>\n\n<system-reminder>\nNot closed.\n";
         let result = rule.run(content);
-        assert!(
-            result.is_some(),
+        assert_eq!(
+            result.len(),
+            1,
             "should flag unclosed <system-reminder> tag"
         );
-        let violation = result.unwrap();
         assert!(
-            violation.message.contains("system-reminder"),
+            result[0].message.contains("system-reminder"),
             "message should mention the unclosed tag, got: {}",
-            violation.message
+            result[0].message
         );
     }
 
     #[test]
-    fn returns_none_when_no_tags_at_all() {
+    fn returns_empty_when_no_tags_at_all() {
         let rule = UnclosedTagsRule;
         let content = "Just plain text with no XML tags.\n";
-        assert!(rule.run(content).is_none());
+        assert!(rule.run(content).is_empty());
     }
 
     #[test]
-    fn returns_none_with_multiple_instances_of_same_tag() {
+    fn returns_empty_with_multiple_instances_of_same_tag() {
         let rule = UnclosedTagsRule;
         let content = "<required>\nFirst.\n</required>\n\n<required>\nSecond.\n</required>\n";
-        assert!(rule.run(content).is_none());
+        assert!(rule.run(content).is_empty());
     }
 
     #[test]
@@ -152,16 +150,16 @@ mod tests {
         let content = "<required>\nFirst.\n</required>\n\n<required>\nSecond without close.\n";
         let result = rule.run(content);
         assert!(
-            result.is_some(),
+            !result.is_empty(),
             "should flag mismatched required tag counts"
         );
     }
 
     #[test]
-    fn returns_none_for_self_closing_tags() {
+    fn returns_empty_for_self_closing_tags() {
         let rule = UnclosedTagsRule;
         let content = "Some content with <br/> and <hr/> self-closing tags.\n";
-        assert!(rule.run(content).is_none());
+        assert!(rule.run(content).is_empty());
     }
 
     #[test]
