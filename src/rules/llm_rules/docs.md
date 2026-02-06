@@ -17,12 +17,16 @@ Path: @/src/rules/llm_rules
 ### Core Implementation
 
 - **`mod.rs`** -- Defines the `LlmRule` trait with four methods: `name() -> &str`, `description() -> &str`, `system_prompt() -> &str`, and `evaluate(input: &str, llm_response: &str) -> Option<RuleViolation>`. The `input` parameter is the raw SKILL.md content; `llm_response` is the text returned by the LLM.
-- **`redundant_explanation.rs`** -- `RedundantExplanationRule` detects when a skill file wastes context window tokens explaining concepts an LLM already knows (e.g., "GCP stands for Google Cloud Platform"). The system prompt instructs Claude to return a JSON object with `has_violations` and `explanations` fields. The `evaluate()` method deserializes the LLM's JSON response into `LlmResponse`/`Explanation` structs and returns a `RuleViolation` listing the offending passages. Malformed LLM responses are handled gracefully via `.ok()?` -- they produce `None` (pass) rather than a panic.
+- **`redundant_explanation.rs`** -- `RedundantExplanationRule` detects when a skill file wastes context window tokens explaining concepts an LLM already knows (e.g., "GCP stands for Google Cloud Platform"). The system prompt instructs Claude to return a JSON object with `has_violations` and `explanations` fields. The `evaluate()` method deserializes the LLM's JSON response and returns a `RuleViolation` listing the offending passages. Fires whenever `has_violations` is true and the explanations list is non-empty.
+- **`process_not_integration.rs`** -- `ProcessNotIntegrationRule` detects when a skill file is structured as a reference manual (listing CLI commands, API endpoints, tool capabilities) rather than a step-by-step process with clear workflows. The system prompt teaches the LLM to distinguish "integration" style (declarative tone, parameter docs, capability catalogs) from "process" style (numbered checklists, imperative verbs, `<required>` blocks, conditional branching). The `evaluate()` method deserializes a JSON response with `is_integration`, `confidence`, and `evidence` fields. Only flags a violation when confidence is `"high"` and evidence is non-empty, to avoid false positives on hybrid skills.
 
 ### Things to Know
 
 - The `LlmRule` trait is synchronous -- the async boundary lives in the `LlmAnalyzer` trait, not in the rule itself. This means rules can be unit-tested with plain strings, no async runtime needed.
-- `evaluate()` receives both the original file content and the LLM response. The current `redundant_explanation` rule only uses the LLM response, but the `input` parameter is available for rules that need to cross-reference.
-- The system prompt explicitly tells the LLM what NOT to flag (project-specific terms, custom tool names, directives) to reduce false positives.
+- `evaluate()` receives both the original file content and the LLM response. Current rules only use the LLM response, but the `input` parameter is available for rules that need to cross-reference.
+- Each rule defines its own JSON response schema in the system prompt. There is no shared schema across rules.
+- Both rules use a `strip_markdown_fences()` helper to handle cases where the LLM wraps its JSON response in markdown code fences. This function is duplicated as a private helper in each rule module.
+- Malformed LLM responses are handled gracefully in both rules via `.ok()?` on `serde_json::from_str()` -- they produce `None` (pass) rather than a panic.
+- Rules differ in their false-positive gating strategy: `redundant_explanation` fires whenever the LLM says there are violations; `process_not_integration` additionally requires `"high"` confidence before reporting.
 
 Created and maintained by Nori.
