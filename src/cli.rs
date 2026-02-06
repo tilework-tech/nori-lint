@@ -10,6 +10,7 @@ use crate::llm_client::{AnthropicClient, LlmAnalyzer};
 use crate::llm_registry::LlmRegistry;
 use crate::registry::Registry;
 use crate::rules::line_count::LineCountRule;
+use crate::rules::llm_rules::cli_command_index::CliCommandIndexRule;
 use crate::rules::llm_rules::redundant_explanation::RedundantExplanationRule;
 use crate::rules::required_tags::RequiredTagsRule;
 use crate::rules::unclosed_tags::UnclosedTagsRule;
@@ -133,6 +134,7 @@ pub async fn run() -> i32 {
     let llm_registry = {
         let mut r = LlmRegistry::new();
         if config.is_some() {
+            r.register(Box::new(CliCommandIndexRule));
             r.register(Box::new(RedundantExplanationRule));
         }
         r
