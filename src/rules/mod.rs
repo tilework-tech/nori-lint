@@ -1,6 +1,7 @@
 pub mod bold_italics;
 pub mod line_count;
 pub mod llm_rules;
+pub mod markdown_links;
 pub mod redundant_title;
 pub mod required_tags;
 pub mod unclosed_tags;

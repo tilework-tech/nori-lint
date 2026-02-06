@@ -18,14 +18,16 @@ Path: @/src/rules
 ### Core Implementation
 
 - **`mod.rs`** -- Defines the `Rule` trait with three required methods: `name() -> &str`, `description() -> &str`, `run(&str) -> Vec<RuleViolation>`. Re-exports submodules for all deterministic rules and the `llm_rules` submodule.
-- **Deterministic rules** -- `bold_italics.rs`, `line_count.rs`, `redundant_title.rs`, `required_tags.rs`, `unclosed_tags.rs`. These are stateless unit structs implementing `Rule`. They receive the full file content as `&str` and return `Vec<RuleViolation>`.
+- **Deterministic rules** -- Stateless unit structs implementing `Rule`, including `bold_italics.rs`, `line_count.rs`, `markdown_links.rs`, `redundant_title.rs`, `required_tags.rs`, `unclosed_tags.rs`. They receive the full file content as `&str` and return `Vec<RuleViolation>`.
 - **`llm_rules/`** -- Submodule containing the `LlmRule` trait and LLM-powered rule implementations. See `@/src/rules/llm_rules/docs.md`.
 
 ### Things to Know
 
 - The `Rule` trait (deterministic) and `LlmRule` trait (LLM) are completely separate traits with different method signatures. `Rule::run()` receives only file content. `LlmRule::evaluate()` receives both file content and the LLM's response text. `LlmRule::system_prompt()` provides the prompt sent to the LLM.
-- `Rule::run()` returns `Vec<RuleViolation>`, allowing a single rule to report multiple violations per file. Rules that detect at most one violation (e.g., `line_count`, `required_tags`, `unclosed_tags`) return a single-element vec or an empty vec. Rules that scan line-by-line (e.g., `bold_italics`) may return many violations from one invocation.
-- The `RuleViolation` struct has optional `line` and `snippet` fields. File-level rules (like `line_count`) leave these as `None`. Line-level rules (like `bold_italics` and `redundant_title`) populate both fields with the 1-indexed line number and the offending line text.
+- `Rule::run()` returns `Vec<RuleViolation>`, allowing a single rule to report multiple violations per file. Rules that detect at most one violation (e.g., `line_count`, `required_tags`, `unclosed_tags`) return a single-element vec or an empty vec. Rules that scan line-by-line (e.g., `bold_italics`, `markdown_links`) may return many violations from one invocation.
+- The `RuleViolation` struct has optional `line` and `snippet` fields. File-level rules (like `line_count`) leave these as `None`. Line-level rules (like `bold_italics`, `markdown_links`, and `redundant_title`) populate both fields with the 1-indexed line number and the offending line text.
+- The `markdown_links` rule introduces an `in_example_block` state tracker to skip content inside XML example tags (`<good-example>`, `<bad-example>`, `<good_example>`, `<bad_example>`). This is a pattern not used by other deterministic rules -- it allows the rule to avoid flagging markdown links that appear inside illustrative examples.
+- Both `bold_italics` and `markdown_links` use a `strip_inline_code()` helper to replace inline code spans with spaces before scanning for violations. These are currently independent copies of the same function, not a shared utility.
 - Each rule module includes its own `#[cfg(test)]` unit tests verifying pass/fail behavior and boundary conditions.
 
 Created and maintained by Nori.
