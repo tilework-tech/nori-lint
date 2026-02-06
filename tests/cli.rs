@@ -365,9 +365,7 @@ fn help_flag_prints_usage_and_exits_success() {
         .stdout(predicate::str::contains("Usage:"))
         .stdout(predicate::str::contains("nori-lint"))
         .stdout(predicate::str::contains("--format"))
-        .stdout(predicate::str::contains("line_count"))
-        .stdout(predicate::str::contains("required_tags"))
-        .stdout(predicate::str::contains("unclosed_tags"));
+        .stdout(predicate::str::contains("Rules:").not());
 }
 
 #[test]
@@ -596,15 +594,6 @@ fn format_json_includes_redundant_title_violation() {
 }
 
 #[test]
-fn help_flag_includes_redundant_title_rule() {
-    let mut cmd = cargo_bin_cmd!("nori-lint");
-    cmd.arg("--help")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("redundant_title"));
-}
-
-#[test]
 fn nori_lint_json_in_cwd_is_auto_discovered() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join("SKILL.md"), small_skill_content()).unwrap();
@@ -676,11 +665,4 @@ fn format_json_includes_bold_italics_violation_with_line_number() {
     );
 }
 
-#[test]
-fn help_includes_bold_italics_rule() {
-    let mut cmd = cargo_bin_cmd!("nori-lint");
-    cmd.arg("--help")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("bold_italics"));
-}
+
