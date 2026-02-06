@@ -14,16 +14,16 @@ impl Rule for LineCountRule {
         "Checks that SKILL.md files do not exceed 150 lines"
     }
 
-    fn run(&self, input: &str) -> Option<RuleViolation> {
+    fn run(&self, input: &str) -> Vec<RuleViolation> {
         let count = input.lines().count();
         if count > MAX_LINES {
-            Some(RuleViolation {
+            vec![RuleViolation {
                 message: format!("File has {count} lines, exceeding the limit of {MAX_LINES}"),
                 line: None,
                 snippet: None,
-            })
+            }]
         } else {
-            None
+            vec![]
         }
     }
 }
@@ -33,20 +33,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn returns_none_for_short_file() {
+    fn returns_empty_for_short_file() {
         let rule = LineCountRule;
         let content = "line1\nline2\nline3\n";
-        assert!(rule.run(content).is_none());
+        assert!(rule.run(content).is_empty());
     }
 
     #[test]
-    fn returns_none_at_exactly_150_lines() {
+    fn returns_empty_at_exactly_150_lines() {
         let rule = LineCountRule;
         let content: String = (1..=150)
             .map(|i| format!("line {i}"))
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rule.run(&content).is_none());
+        assert!(rule.run(&content).is_empty());
     }
 
     #[test]
@@ -57,8 +57,8 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let result = rule.run(&content);
-        assert!(result.is_some());
-        let violation = result.unwrap();
+        assert_eq!(result.len(), 1);
+        let violation = &result[0];
         assert!(
             violation.message.contains("151"),
             "error should mention actual line count, got: {}",
