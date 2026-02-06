@@ -17,12 +17,15 @@ Path: @/src/rules/llm_rules
 ### Core Implementation
 
 - **`mod.rs`** -- Defines the `LlmRule` trait with four methods: `name() -> &str`, `description() -> &str`, `system_prompt() -> &str`, and `evaluate(input: &str, llm_response: &str) -> Option<RuleViolation>`. The `input` parameter is the raw SKILL.md content; `llm_response` is the text returned by the LLM.
-- **`redundant_explanation.rs`** -- `RedundantExplanationRule` detects when a skill file wastes context window tokens explaining concepts an LLM already knows (e.g., "GCP stands for Google Cloud Platform"). The system prompt instructs Claude to return a JSON object with `has_violations` and `explanations` fields. The `evaluate()` method deserializes the LLM's JSON response into `LlmResponse`/`Explanation` structs and returns a `RuleViolation` listing the offending passages. Malformed LLM responses are handled gracefully via `.ok()?` -- they produce `None` (pass) rather than a panic.
+- **`redundant_explanation.rs`** -- `RedundantExplanationRule` detects when a skill file wastes context window tokens explaining concepts an LLM already knows (e.g., "GCP stands for Google Cloud Platform"). The system prompt instructs Claude to return a JSON object with `has_violations` and `explanations` fields. The `evaluate()` method deserializes the LLM's JSON response into `LlmResponse`/`Explanation` structs and returns a `RuleViolation` listing the offending passages.
+- **`negative_without_positive.rs`** -- `NegativeWithoutPositiveRule` flags instructions that tell the reader what NOT to do without providing a corresponding positive alternative (e.g., "Don't use global variables" without suggesting what to use instead). The system prompt instructs Claude to return a JSON object with `has_violations` and `negatives` fields. The system prompt explicitly carves out absolute prohibitions (safety/policy guardrails like "NEVER push to main") so they are not flagged. The `evaluate()` method deserializes the LLM's JSON response into `LlmResponse`/`Negative` structs and returns a `RuleViolation` listing the offending passages.
 
 ### Things to Know
 
 - The `LlmRule` trait is synchronous -- the async boundary lives in the `LlmAnalyzer` trait, not in the rule itself. This means rules can be unit-tested with plain strings, no async runtime needed.
-- `evaluate()` receives both the original file content and the LLM response. The current `redundant_explanation` rule only uses the LLM response, but the `input` parameter is available for rules that need to cross-reference.
-- The system prompt explicitly tells the LLM what NOT to flag (project-specific terms, custom tool names, directives) to reduce false positives.
+- `evaluate()` receives both the original file content and the LLM response. Both existing rules only use the LLM response, but the `input` parameter is available for rules that need to cross-reference the original file.
+- All LLM rules follow a shared pattern: the system prompt requests a JSON response with a `has_violations` boolean plus a typed array of findings; `evaluate()` deserializes the response, checks for violations, and builds a `RuleViolation` from the findings. Malformed LLM responses are handled gracefully via `.ok()?` -- they produce `None` (pass) rather than a panic.
+- Each rule defines its own `strip_markdown_fences()` helper to strip markdown code fences from LLM responses before JSON parsing, since LLMs sometimes wrap JSON in triple-backtick blocks.
+- System prompts include explicit carve-outs for content that should NOT be flagged (e.g., project-specific terms in `redundant_explanation`, absolute prohibitions in `negative_without_positive`) to reduce false positives.
 
 Created and maintained by Nori.
