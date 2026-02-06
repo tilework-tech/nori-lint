@@ -365,9 +365,7 @@ fn help_flag_prints_usage_and_exits_success() {
         .stdout(predicate::str::contains("Usage:"))
         .stdout(predicate::str::contains("nori-lint"))
         .stdout(predicate::str::contains("--format"))
-        .stdout(predicate::str::contains("line_count"))
-        .stdout(predicate::str::contains("required_tags"))
-        .stdout(predicate::str::contains("unclosed_tags"));
+        .stdout(predicate::str::contains("Rules:").not());
 }
 
 #[test]
@@ -593,15 +591,6 @@ fn format_json_includes_redundant_title_violation() {
         title_diag["snippet"].as_str().is_some(),
         "should have a snippet"
     );
-}
-
-#[test]
-fn help_flag_includes_redundant_title_rule() {
-    let mut cmd = cargo_bin_cmd!("nori-lint");
-    cmd.arg("--help")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("redundant_title"));
 }
 
 #[test]
@@ -882,13 +871,4 @@ fn format_json_includes_bold_italics_violation_with_line_number() {
         bold_diag["snippet"].as_str().is_some(),
         "should have a snippet"
     );
-}
-
-#[test]
-fn help_includes_bold_italics_rule() {
-    let mut cmd = cargo_bin_cmd!("nori-lint");
-    cmd.arg("--help")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("bold_italics"));
 }

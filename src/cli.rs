@@ -37,18 +37,9 @@ fn default_registry() -> Registry {
     registry
 }
 
-fn build_rules_help() -> String {
-    let registry = default_registry();
-    let mut lines = vec!["Rules:".to_string()];
-    for rule in registry.rules() {
-        lines.push(format!("  {:20} {}", rule.name(), rule.description()));
-    }
-    lines.join("\n")
-}
-
 /// Lint SKILL.md files for common issues
 #[derive(Parser, Debug)]
-#[command(name = "nori-lint", after_help = build_rules_help())]
+#[command(name = "nori-lint")]
 struct Cli {
     /// Output format
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]

@@ -24,7 +24,7 @@ Path: @/tests
 - Rules config tests verify: a disabled rule is suppressed from output, non-disabled rules still fire alongside disabled ones, `enabled` acts as an allowlist (only specified rules run), specifying both `enabled` and `disabled` produces an error, a config without a `rules` field runs all rules, and unknown rule names in `disabled` produce a stderr warning
 - JSON tests parse stdout with `serde_json` and assert on the array structure and individual diagnostic fields (`rule`, `file`, `message`, `line`, `snippet`)
 - Tests that check for a specific rule's violation use `.find()` on the diagnostics array rather than asserting exact array length, since a single file may trigger violations from multiple rules simultaneously
-- The `bold_italics` integration tests verify that the rule appears in `--help`, that bold text in a SKILL.md causes a failure exit, and that JSON output includes `line` and `snippet` fields for bold_italics violations
+- The `bold_italics` integration tests verify that bold text in a SKILL.md causes a failure exit and that JSON output includes `line` and `snippet` fields for bold_italics violations
 
 ### Things to Know
 
@@ -36,7 +36,7 @@ Path: @/tests
 - The `small_skill_content()` helper includes `<required>...</required>` tags so it passes all deterministic rules
 - A file can trigger violations from multiple rules at once -- tests account for this by filtering diagnostics by rule name
 - The mixed-files test accounts for OS path separator differences by checking for both `bad/SKILL.md` and `bad\SKILL.md`
-- `--help` tests verify that help output includes usage syntax, the `--format` option, and all registered rule names; they also verify `-h` produces identical output to `--help`, and that `--help` takes priority over other arguments (exits 0 without linting)
+- `--help` tests verify that help output includes usage syntax and the `--format` option but does not include the rules list; they also verify `-h` produces identical output to `--help`, and that `--help` takes priority over other arguments (exits 0 without linting)
 - CLI parse errors (e.g., `--format` with a missing or invalid value) produce clap-generated error messages on stderr and exit code 2
 
 Created and maintained by Nori.
