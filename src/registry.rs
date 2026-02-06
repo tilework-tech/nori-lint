@@ -37,8 +37,8 @@ mod tests {
         fn description(&self) -> &str {
             "always passes"
         }
-        fn run(&self, _input: &str) -> Option<RuleViolation> {
-            None
+        fn run(&self, _input: &str) -> Vec<RuleViolation> {
+            vec![]
         }
     }
 
@@ -50,12 +50,12 @@ mod tests {
         fn description(&self) -> &str {
             "always fails"
         }
-        fn run(&self, _input: &str) -> Option<RuleViolation> {
-            Some(RuleViolation {
+        fn run(&self, _input: &str) -> Vec<RuleViolation> {
+            vec![RuleViolation {
                 message: "something went wrong".to_string(),
                 line: None,
                 snippet: None,
-            })
+            }]
         }
     }
 
@@ -81,7 +81,7 @@ mod tests {
 
         let rules = registry.rules();
         assert_eq!(rules.len(), 2);
-        assert!(rules[0].run("anything").is_none());
-        assert!(rules[1].run("anything").is_some());
+        assert!(rules[0].run("anything").is_empty());
+        assert!(!rules[1].run("anything").is_empty());
     }
 }
