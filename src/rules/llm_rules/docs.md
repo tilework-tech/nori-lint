@@ -17,12 +17,14 @@ Path: @/src/rules/llm_rules
 ### Core Implementation
 
 - **`mod.rs`** -- Defines the `LlmRule` trait with four methods: `name() -> &str`, `description() -> &str`, `system_prompt() -> &str`, and `evaluate(input: &str, llm_response: &str) -> Option<RuleViolation>`. The `input` parameter is the raw SKILL.md content; `llm_response` is the text returned by the LLM.
-- **`redundant_explanation.rs`** -- `RedundantExplanationRule` detects when a skill file wastes context window tokens explaining concepts an LLM already knows (e.g., "GCP stands for Google Cloud Platform"). The system prompt instructs Claude to return a JSON object with `has_violations` and `explanations` fields. The `evaluate()` method deserializes the LLM's JSON response into `LlmResponse`/`Explanation` structs and returns a `RuleViolation` listing the offending passages. Malformed LLM responses are handled gracefully via `.ok()?` -- they produce `None` (pass) rather than a panic.
+- **Shared rule pattern** -- Each rule implementation follows the same structure: a `SYSTEM_PROMPT` const instructing the LLM to return a JSON object with `has_violations: bool` and a rule-specific array of findings, private `serde::Deserialize` structs to parse the response, and an `evaluate()` method that deserializes and converts to a `RuleViolation`. Malformed LLM responses are handled gracefully via `.ok()?` -- they produce `None` (pass) rather than a panic. The shared `strip_markdown_fences()` utility in `mod.rs` unwraps responses wrapped in triple backticks.
+- **`redundant_explanation.rs`** -- `RedundantExplanationRule` detects when a skill file wastes context window tokens explaining concepts an LLM already knows (e.g., "GCP stands for Google Cloud Platform"). The JSON response uses an `explanations` array with `text` and `reason` fields.
+- **`first_person.rs`** -- `FirstPersonRule` detects when a SKILL.md file refers to the skill author as "the user" (third person) instead of first person ("me", "my", "I"). Since SKILL.md files are instructions from a human to an AI assistant, the human should address themselves in first person. The JSON response uses a `violations` array with `original` and `suggested` fields. The system prompt explicitly excludes references to end users of a product being built, quoted examples, and third-party users to reduce false positives.
 
 ### Things to Know
 
 - The `LlmRule` trait is synchronous -- the async boundary lives in the `LlmAnalyzer` trait, not in the rule itself. This means rules can be unit-tested with plain strings, no async runtime needed.
-- `evaluate()` receives both the original file content and the LLM response. The current `redundant_explanation` rule only uses the LLM response, but the `input` parameter is available for rules that need to cross-reference.
-- The system prompt explicitly tells the LLM what NOT to flag (project-specific terms, custom tool names, directives) to reduce false positives.
+- `evaluate()` receives both the original file content and the LLM response. Both current rules only use the LLM response, but the `input` parameter is available for rules that need to cross-reference.
+- Each rule's system prompt explicitly tells the LLM what NOT to flag to reduce false positives -- this is a key part of the rule design.
 
 Created and maintained by Nori.
