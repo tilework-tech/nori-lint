@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 use crate::diagnostic::RuleViolation;
-use crate::rules::llm_rules::{strip_markdown_fences, LlmRule};
+use crate::rules::llm_rules::{LlmRule, strip_markdown_fences};
 
 const SYSTEM_PROMPT: &str = r#"Find passages in the provided file where the author wastes tokens explaining concepts that a modern LLM already knows from its training data.
 

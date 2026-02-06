@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 use crate::diagnostic::RuleViolation;
-use crate::rules::llm_rules::{strip_markdown_fences, LlmRule};
+use crate::rules::llm_rules::{LlmRule, strip_markdown_fences};
 
 const SYSTEM_PROMPT: &str = r#"You are reviewing a SKILL.md file. These files are instructions written by a human to configure an AI assistant's behavior. The audience is the AI assistant itself.
 
