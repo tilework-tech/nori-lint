@@ -1,4 +1,5 @@
 pub mod first_person;
+pub mod negative_without_positive;
 pub mod redundant_explanation;
 
 use crate::diagnostic::RuleViolation;
