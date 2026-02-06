@@ -18,13 +18,13 @@ Path: @/src/rules
 ### Core Implementation
 
 - **`mod.rs`** -- Defines the `Rule` trait with three required methods: `name() -> &str`, `description() -> &str`, `run(&str) -> Option<RuleViolation>`. Re-exports submodules for all deterministic rules and the `llm_rules` submodule.
-- **Deterministic rules** -- `line_count.rs`, `required_tags.rs`, `unclosed_tags.rs`. These are stateless unit structs implementing `Rule`. They receive the full file content as `&str` and return `Option<RuleViolation>`.
+- **Deterministic rules** -- `line_count.rs`, `redundant_title.rs`, `required_tags.rs`, `unclosed_tags.rs`. These are stateless unit structs implementing `Rule`. They receive the full file content as `&str` and return `Option<RuleViolation>`.
 - **`llm_rules/`** -- Submodule containing the `LlmRule` trait and LLM-powered rule implementations. See `@/src/rules/llm_rules/docs.md`.
 
 ### Things to Know
 
 - The `Rule` trait (deterministic) and `LlmRule` trait (LLM) are completely separate traits with different method signatures. `Rule::run()` receives only file content. `LlmRule::evaluate()` receives both file content and the LLM's response text. `LlmRule::system_prompt()` provides the prompt sent to the LLM.
-- All deterministic rules are stateless and file-level (both `line` and `snippet` are `None` in violations); the `RuleViolation` struct supports line-specific rules but none exist yet.
+- All deterministic rules are stateless. Most are file-level (both `line` and `snippet` are `None` in violations), but `redundant_title` provides line-specific violations with the heading's line number and text snippet.
 - Each rule module includes its own `#[cfg(test)]` unit tests verifying pass/fail behavior and boundary conditions.
 
 Created and maintained by Nori.
