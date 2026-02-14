@@ -73,7 +73,7 @@ fn resolve_config(cli_config_path: Option<&str>) -> Result<Option<Config>, Strin
     Ok(None)
 }
 
-async fn run_llm_rules<A: LlmAnalyzer>(
+pub(crate) async fn run_llm_rules<A: LlmAnalyzer>(
     client: &A,
     llm_registry: &LlmRegistry,
     config: &Config,
@@ -82,11 +82,28 @@ async fn run_llm_rules<A: LlmAnalyzer>(
     diagnostics: &mut Vec<LintDiagnostic>,
     has_llm_error: &mut bool,
 ) {
-    for rule in llm_registry.rules() {
-        if !config.is_rule_enabled(rule.name()) {
-            continue;
-        }
-        match client.analyze(rule.system_prompt(), content).await {
+    let enabled_rules: Vec<_> = llm_registry
+        .rules()
+        .iter()
+        .filter(|rule| config.is_rule_enabled(rule.name()))
+        .collect();
+
+    if enabled_rules.is_empty() {
+        return;
+    }
+
+    let rule_names: Vec<&str> = enabled_rules.iter().map(|r| r.name()).collect();
+    eprintln!("  checking {}...", rule_names.join(", "));
+
+    let futures = enabled_rules.iter().map(|rule| async move {
+        let result = client.analyze(rule.system_prompt(), content).await;
+        (rule, result)
+    });
+
+    let results = futures::future::join_all(futures).await;
+
+    for (rule, result) in results {
+        match result {
             Ok(response) => {
                 if let Some(violation) = rule.evaluate(content, &response) {
                     diagnostics.push(LintDiagnostic::from_violation(
@@ -245,4 +262,186 @@ pub async fn run() -> i32 {
     }
 
     if has_violations { 1 } else { 0 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Config, RulesConfig};
+    use crate::diagnostic::RuleViolation;
+    use crate::llm_client::{LlmAnalyzer, LlmError};
+    use crate::llm_registry::LlmRegistry;
+    use crate::rules::llm_rules::LlmRule;
+    use std::time::Duration;
+
+    struct DelayMockAnalyzer {
+        delay: Duration,
+        response: Result<String, String>,
+    }
+
+    impl LlmAnalyzer for DelayMockAnalyzer {
+        async fn analyze(
+            &self,
+            _system_prompt: &str,
+            _user_content: &str,
+        ) -> Result<String, LlmError> {
+            tokio::time::sleep(self.delay).await;
+            self.response
+                .clone()
+                .map_err(|e| LlmError::HttpError(e.clone()))
+        }
+    }
+
+    struct AlwaysViolatesRule {
+        rule_name: &'static str,
+    }
+
+    impl LlmRule for AlwaysViolatesRule {
+        fn name(&self) -> &str {
+            self.rule_name
+        }
+        fn description(&self) -> &str {
+            "mock rule"
+        }
+        fn system_prompt(&self) -> &str {
+            "mock prompt"
+        }
+        fn evaluate(&self, _input: &str, _llm_response: &str) -> Option<RuleViolation> {
+            Some(RuleViolation {
+                message: format!("violation from {}", self.rule_name),
+                line: None,
+                snippet: None,
+            })
+        }
+    }
+
+    fn make_config(rules: Option<RulesConfig>) -> Config {
+        Config {
+            anthropic_api_key: "fake-key".to_string(),
+            rules,
+        }
+    }
+
+    #[tokio::test]
+    async fn collects_diagnostics_from_all_rules() {
+        let client = DelayMockAnalyzer {
+            delay: Duration::from_millis(10),
+            response: Ok("{}".to_string()),
+        };
+        let mut registry = LlmRegistry::new();
+        registry.register(Box::new(AlwaysViolatesRule {
+            rule_name: "rule_a",
+        }));
+        registry.register(Box::new(AlwaysViolatesRule {
+            rule_name: "rule_b",
+        }));
+        registry.register(Box::new(AlwaysViolatesRule {
+            rule_name: "rule_c",
+        }));
+
+        let config = make_config(None);
+        let mut diagnostics = Vec::new();
+        let mut has_llm_error = false;
+
+        run_llm_rules(
+            &client,
+            &registry,
+            &config,
+            "file content",
+            "test.md",
+            &mut diagnostics,
+            &mut has_llm_error,
+        )
+        .await;
+
+        assert_eq!(
+            diagnostics.len(),
+            3,
+            "should collect diagnostics from all 3 rules"
+        );
+        assert!(!has_llm_error);
+        let rules: Vec<&str> = diagnostics.iter().map(|d| d.rule.as_str()).collect();
+        assert!(rules.contains(&"rule_a"));
+        assert!(rules.contains(&"rule_b"));
+        assert!(rules.contains(&"rule_c"));
+    }
+
+    #[tokio::test]
+    async fn error_in_one_rule_does_not_block_others() {
+        // The analyzer always errors, but we have 3 rules.
+        // Two rules always-violate, one never-violates.
+        // With an error response, none should produce diagnostics,
+        // but all should be attempted (has_llm_error = true).
+        let client = DelayMockAnalyzer {
+            delay: Duration::from_millis(10),
+            response: Err("api failure".to_string()),
+        };
+        let mut registry = LlmRegistry::new();
+        registry.register(Box::new(AlwaysViolatesRule {
+            rule_name: "rule_a",
+        }));
+        registry.register(Box::new(AlwaysViolatesRule {
+            rule_name: "rule_b",
+        }));
+        registry.register(Box::new(AlwaysViolatesRule {
+            rule_name: "rule_c",
+        }));
+
+        let config = make_config(None);
+        let mut diagnostics = Vec::new();
+        let mut has_llm_error = false;
+
+        run_llm_rules(
+            &client,
+            &registry,
+            &config,
+            "file content",
+            "test.md",
+            &mut diagnostics,
+            &mut has_llm_error,
+        )
+        .await;
+
+        assert!(has_llm_error, "should flag llm error");
+        assert!(
+            diagnostics.is_empty(),
+            "errors should produce no diagnostics"
+        );
+    }
+
+    #[tokio::test]
+    async fn disabled_rules_are_skipped() {
+        let client = DelayMockAnalyzer {
+            delay: Duration::from_millis(10),
+            response: Ok("{}".to_string()),
+        };
+        let mut registry = LlmRegistry::new();
+        registry.register(Box::new(AlwaysViolatesRule {
+            rule_name: "rule_a",
+        }));
+        registry.register(Box::new(AlwaysViolatesRule {
+            rule_name: "rule_b",
+        }));
+
+        let config = make_config(Some(RulesConfig {
+            enabled: None,
+            disabled: Some(vec!["rule_a".to_string()]),
+        }));
+        let mut diagnostics = Vec::new();
+        let mut has_llm_error = false;
+
+        run_llm_rules(
+            &client,
+            &registry,
+            &config,
+            "file content",
+            "test.md",
+            &mut diagnostics,
+            &mut has_llm_error,
+        )
+        .await;
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].rule, "rule_b");
+    }
 }
