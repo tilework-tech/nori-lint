@@ -27,6 +27,13 @@ Path: @/src
   - `run()` is async: calls `Cli::parse()`, resolves config via `resolve_config()`, validates the path, builds both registries, walks the directory tree for SKILL.md files, runs deterministic rules synchronously per file (checking `config.is_rule_enabled()` before each rule), runs LLM rules asynchronously per file via `run_llm_rules()` (also filtered by `is_rule_enabled()`), collects `LintDiagnostic` structs, and renders output
   - After config is resolved, `run()` checks all rule names in the config's `enabled` or `disabled` list against a combined list of known deterministic and LLM rule names, emitting stderr warnings for any unknown names
   - Deterministic rule execution iterates each rule's `Vec<RuleViolation>` return value, converting each violation into a `LintDiagnostic`
+  - **LLM rule execution** -- `run_llm_rules()` is a `pub(crate)` async function that executes all enabled LLM rules concurrently using `futures::future::join_all`:
+    - Filters the registry to only enabled rules
+    - Prints progress to stderr in the format `"  checking rule_a, rule_b, rule_c..."` before firing requests
+    - Maps each enabled rule to a future that calls `client.analyze()` and returns `(rule, result)`
+    - Awaits all futures concurrently via `join_all`, which yields wall-clock time roughly equal to the slowest single API call rather than the sum of all calls
+    - Processes results sequentially after all futures complete, collecting diagnostics and flagging errors
+    - Progress output goes to stderr so it does not interfere with `--format json` stdout
 - **`config.rs`** -- Defines `Config` (has `anthropic_api_key` and optional `rules: RulesConfig`) and `RulesConfig` (has optional `enabled` and `disabled` string lists). `load_config()` reads a JSON file, parses it, validates the API key is non-empty/non-blank, and validates that `enabled` and `disabled` are not both specified. `Config::is_rule_enabled()` implements the filtering logic: if `enabled` is set it acts as an allowlist, if `disabled` is set it acts as a denylist, if neither is set all rules are enabled.
 - **`llm_client.rs`** -- Defines the `LlmAnalyzer` trait (async `analyze()` method) and `AnthropicClient` implementation that POSTs to the Anthropic Messages API v1. `LlmError` enum covers HTTP and parse failures. `extract_text_from_response()` pulls the text content from the API response body.
 - **`llm_registry.rs`** -- `LlmRegistry` struct that holds `Vec<Box<dyn LlmRule>>` with `register()` and `rules()` methods. Same pattern as `Registry` but for `LlmRule` trait objects.
@@ -41,6 +48,9 @@ Path: @/src
 - The unknown rule name warning in `cli.rs` builds a combined known-rules list from the deterministic registry plus a hardcoded list of LLM rule name strings. When a new LLM rule is added, its name must also be added to this hardcoded list for the warning to work correctly.
 - The `LlmAnalyzer` trait uses `impl Future` in its return type (not `async_trait`), enabling dependency injection without the `async_trait` crate.
 - `RuleViolation` is the shared boundary type between both rule tiers and the CLI output pipeline.
+- **Concurrency model** -- LLM rules execute concurrently via I/O multiplexing on the single-threaded tokio runtime (`current_thread` flavor). This is cooperative multitasking, not multi-threading. No task spawning occurs; `join_all` simply awaits all futures in parallel. The `LlmRule` trait does NOT require `Send + Sync` bounds because no tasks are spawned across threads.
+- **Runtime dependencies** -- `Cargo.toml` includes `futures = "0.3"` for `join_all`, and tokio with the `time` feature (used in unit tests for `tokio::time::sleep` to verify concurrent execution timing).
+- **Testing concurrent execution** -- Unit tests in `cli.rs` use a `DelayMockAnalyzer` that sleeps for a fixed duration. The test `rules_execute_concurrently_not_sequentially` verifies that 3 rules with 100ms delays complete in <200ms (concurrent) rather than ~300ms (sequential).
 - Adding a new deterministic rule: implement `Rule` (returning `Vec<RuleViolation>`), re-export in `rules/mod.rs`, register in `default_registry()` in `cli.rs`.
 - Adding a new LLM rule: implement `LlmRule`, re-export in `rules/llm_rules/mod.rs`, register in `cli::run()` inside the `if config.is_some()` block, and add its name to the `llm_rule_names` array in `cli::run()` for unknown-rule-name warnings.
 
