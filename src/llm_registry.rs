@@ -28,6 +28,7 @@ impl LlmRegistry {
 mod tests {
     use super::*;
     use crate::diagnostic::RuleViolation;
+    use crate::rules::llm_rules::LlmViolation;
 
     struct MockLlmRule;
     impl LlmRule for MockLlmRule {
@@ -40,7 +41,7 @@ mod tests {
         fn system_prompt(&self) -> &str {
             "you are a mock"
         }
-        fn evaluate(&self, _input: &str, _llm_response: &str) -> Option<RuleViolation> {
+        fn evaluate(&self, _input: &str, _violations: &[LlmViolation]) -> Option<RuleViolation> {
             None
         }
     }

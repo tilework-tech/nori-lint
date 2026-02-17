@@ -1,7 +1,5 @@
-use serde::Deserialize;
-
 use crate::diagnostic::RuleViolation;
-use crate::rules::llm_rules::{LlmRule, strip_markdown_fences};
+use crate::rules::llm_rules::{LlmRule, LlmViolation};
 
 const SYSTEM_PROMPT: &str = r#"Find URLs in the provided SKILL.md file that appear without sufficient surrounding context explaining what the linked content is or why it matters. A URL should be accompanied by text that tells the reader what they will find at that URL and why they should care.
 
@@ -17,24 +15,7 @@ Examples of explained URLs (GOOD — do NOT flag):
 - URLs inside command examples like `curl https://api.example.com/v1/health`
 - URLs that are clearly self-describing from context (e.g., after a sentence that explains what the linked resource is)
 
-Respond ONLY with a JSON object in this exact format:
-{"has_violations": true/false, "urls": [{"url": "the unexplained URL", "reason": "why this URL lacks context"}]}
-
-If there are no violations, respond with:
-{"has_violations": false, "urls": []}"#;
-
-#[derive(Deserialize)]
-struct LlmResponse {
-    has_violations: bool,
-    urls: Vec<UrlViolation>,
-}
-
-#[derive(Deserialize)]
-struct UrlViolation {
-    url: String,
-    #[allow(dead_code)]
-    reason: String,
-}
+For each violation found, report the unexplained URL as "text" and why it lacks context as "reason"."#;
 
 pub struct UnexplainedUrlRule;
 
@@ -51,23 +32,17 @@ impl LlmRule for UnexplainedUrlRule {
         SYSTEM_PROMPT
     }
 
-    fn evaluate(&self, _input: &str, llm_response: &str) -> Option<RuleViolation> {
-        let json_str = strip_markdown_fences(llm_response);
-        let parsed: LlmResponse = serde_json::from_str(json_str).ok()?;
-
-        if !parsed.has_violations || parsed.urls.is_empty() {
+    fn evaluate(&self, _input: &str, violations: &[LlmViolation]) -> Option<RuleViolation> {
+        if violations.is_empty() {
             return None;
         }
-
-        let details: Vec<String> = parsed
-            .urls
+        let details: Vec<String> = violations
             .iter()
-            .map(|u| format!("\"{}\"", u.url))
+            .map(|u| format!("\"{}\"", u.text))
             .collect();
-
         Some(RuleViolation {
             message: format!(
-                "File contains URLs without sufficient context: {}",
+                "File contains URLs without surrounding context explaining what they link to: {}",
                 details.join(", ")
             ),
             line: None,
@@ -79,6 +54,7 @@ impl LlmRule for UnexplainedUrlRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rules::llm_rules::LlmViolation;
 
     #[test]
     fn has_correct_name() {
@@ -99,36 +75,20 @@ mod tests {
     }
 
     #[test]
-    fn system_prompt_asks_for_json_response() {
-        let rule = UnexplainedUrlRule;
-        let prompt = rule.system_prompt();
-        assert!(
-            prompt.contains("has_violations") && prompt.contains("urls"),
-            "system prompt should request JSON with has_violations and urls fields"
-        );
-    }
-
-    #[test]
     fn returns_none_when_no_violations() {
         let rule = UnexplainedUrlRule;
-        let llm_response = r#"{"has_violations": false, "urls": []}"#;
-        let result = rule.evaluate("some skill content", llm_response);
+        let result = rule.evaluate("some skill content", &[]);
         assert!(result.is_none());
     }
 
     #[test]
     fn returns_violation_when_unexplained_urls_found() {
         let rule = UnexplainedUrlRule;
-        let llm_response = r#"{
-            "has_violations": true,
-            "urls": [
-                {
-                    "url": "https://raw.githubusercontent.com/org/repo/abc123/path/file.md",
-                    "reason": "No description of what this file contains"
-                }
-            ]
-        }"#;
-        let result = rule.evaluate("content with unexplained urls", llm_response);
+        let violations = &[LlmViolation {
+            text: "https://raw.githubusercontent.com/org/repo/abc123/path/file.md".into(),
+            reason: "No description of what this file contains".into(),
+        }];
+        let result = rule.evaluate("content with unexplained urls", violations);
         assert!(result.is_some());
         let violation = result.unwrap();
         assert!(
@@ -141,8 +101,7 @@ mod tests {
     #[test]
     fn returns_none_for_empty_urls_even_if_flagged() {
         let rule = UnexplainedUrlRule;
-        let llm_response = r#"{"has_violations": true, "urls": []}"#;
-        let result = rule.evaluate("content", llm_response);
+        let result = rule.evaluate("content", &[]);
         assert!(
             result.is_none(),
             "should return None when no actual URLs are listed"
@@ -150,47 +109,19 @@ mod tests {
     }
 
     #[test]
-    fn handles_markdown_fenced_json() {
-        let rule = UnexplainedUrlRule;
-        let llm_response = "```json\n{\"has_violations\": true, \"urls\": [{\"url\": \"https://example.com/mystery\", \"reason\": \"no context\"}]}\n```";
-        let result = rule.evaluate("content", llm_response);
-        assert!(result.is_some());
-        let violation = result.unwrap();
-        assert!(
-            violation.message.contains("example.com/mystery"),
-            "should parse JSON from within markdown fences, got: {}",
-            violation.message
-        );
-    }
-
-    #[test]
-    fn returns_none_for_malformed_json() {
-        let rule = UnexplainedUrlRule;
-        let llm_response = "this is not json at all";
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_none(),
-            "should return None for unparseable LLM response rather than panicking"
-        );
-    }
-
-    #[test]
     fn reports_multiple_unexplained_urls() {
         let rule = UnexplainedUrlRule;
-        let llm_response = r#"{
-            "has_violations": true,
-            "urls": [
-                {
-                    "url": "https://example.com/first",
-                    "reason": "no context"
-                },
-                {
-                    "url": "https://example.com/second",
-                    "reason": "no context"
-                }
-            ]
-        }"#;
-        let result = rule.evaluate("content", llm_response);
+        let violations = &[
+            LlmViolation {
+                text: "https://example.com/first".into(),
+                reason: "no context".into(),
+            },
+            LlmViolation {
+                text: "https://example.com/second".into(),
+                reason: "no context".into(),
+            },
+        ];
+        let result = rule.evaluate("content", violations);
         assert!(result.is_some());
         let violation = result.unwrap();
         assert!(violation.message.contains("example.com/first"));
