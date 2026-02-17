@@ -4,54 +4,32 @@ Path: @/src
 
 ### Overview
 
-- Contains the library and binary source for the `nori-lint` CLI
-- Organized into a hybrid crate: `main.rs` (thin async binary entry point) and `lib.rs` (library exposing `cli`, `config`, `diagnostic`, `llm_client`, `llm_registry`, `registry`, and `rules` modules)
+- Contains the TypeScript source for the `nori-lint` CLI
+- Organized into modules: `cli.ts` (entry point and orchestration), `config.ts`, `diagnostic.ts`, `llm-client.ts`, `llm-registry.ts`, `registry.ts`, and `rules/`
 
 ### How it fits into the larger codebase
 
-- `main.rs` is the binary entry point compiled into the `nori-lint` executable; it uses `#[tokio::main(flavor = "current_thread")]` and delegates to `cli::run().await`
-- Integration tests in `@/tests/cli.rs` exercise the compiled binary as a subprocess
-- Unit tests live alongside production code in individual modules via `#[cfg(test)]` blocks
+- `cli.ts` is the entry point compiled into the `nori-lint` binary via the `bin` field in `@/package.json`; it self-invokes via an `import.meta.url` check
+- Integration tests in `@/tests/cli.test.ts` exercise `run()` directly by stubbing `process.argv`, `process.stdout.write`, and `process.stderr.write`
+- Unit tests live alongside production code as `.test.ts` files (e.g., `config.test.ts`, `registry.test.ts`)
 
 ### Core Implementation
 
-- **`main.rs`** -- Async entry point. Uses `tokio::main` with `current_thread` flavor to drive `cli::run().await`, then passes the return code to `std::process::exit()`.
-- **`lib.rs`** -- Library root that re-exports seven public modules: `cli`, `config`, `diagnostic`, `llm_client`, `llm_registry`, `registry`, `rules`.
-- **`diagnostic.rs`** -- Defines two structs:
-  - `RuleViolation`: produced by both `Rule::run()` and `LlmRule::evaluate()`, carries `message`, optional `line` number, and optional `snippet`. Internal type, not serializable.
-  - `LintDiagnostic`: the output-facing struct, derives `Serialize`. Contains `rule`, `file`, `line`, `snippet`, and `message`. Constructed from a `RuleViolation` via `LintDiagnostic::from_violation()`.
-- **`cli.rs`** -- Orchestrates the full lint pipeline using clap's derive API for argument parsing:
-  - A `Cli` struct with `#[derive(Parser)]` defines the CLI interface: `--format text|json` (via a `ValueEnum`-derived `OutputFormat` enum), `--config <path>` (optional), and an optional positional `path` argument (defaults to `"."`)
-  - `--help`/`-h` is handled automatically by clap, which prints usage info and exits with code 0; help output does not list available rules
-  - clap handles parse errors (missing values, invalid format values) by printing an error to stderr and exiting with code 2
-  - `run()` is async: calls `Cli::parse()`, resolves config via `resolve_config()`, validates the path, builds both registries, walks the directory tree for SKILL.md files, runs deterministic rules synchronously per file (checking `config.is_rule_enabled()` before each rule), runs LLM rules asynchronously per file via `run_llm_rules()` (also filtered by `is_rule_enabled()`), collects `LintDiagnostic` structs, and renders output
-  - After config is resolved, `run()` checks all rule names in the config's `enabled` or `disabled` list against a combined list of known deterministic and LLM rule names, emitting stderr warnings for any unknown names
-  - Deterministic rule execution iterates each rule's `Vec<RuleViolation>` return value, converting each violation into a `LintDiagnostic`
-  - **LLM rule execution** -- `run_llm_rules()` is a `pub(crate)` async function that executes all enabled LLM rules concurrently using `futures::future::join_all`:
-    - Filters the registry to only enabled rules
-    - Prints progress to stderr in the format `"  checking rule_a, rule_b, rule_c..."` before firing requests
-    - Maps each enabled rule to a future that calls `client.analyze()` and returns `(rule, result)`
-    - Awaits all futures concurrently via `join_all`, which yields wall-clock time roughly equal to the slowest single API call rather than the sum of all calls
-    - Processes results sequentially after all futures complete, collecting diagnostics and flagging errors
-    - Progress output goes to stderr so it does not interfere with `--format json` stdout
-- **`config.rs`** -- Defines `Config` (has `anthropic_api_key` and optional `rules: RulesConfig`) and `RulesConfig` (has optional `enabled` and `disabled` string lists). `load_config()` reads a JSON file, parses it, validates the API key is non-empty/non-blank, and validates that `enabled` and `disabled` are not both specified. `Config::is_rule_enabled()` implements the filtering logic: if `enabled` is set it acts as an allowlist, if `disabled` is set it acts as a denylist, if neither is set all rules are enabled.
-- **`llm_client.rs`** -- Defines the `LlmAnalyzer` trait (async `analyze()` returning `Result<LlmResponse, LlmError>`) and `AnthropicClient` implementation that POSTs to the Anthropic Messages API v1 using tool_use with forced `tool_choice` to enforce a common JSON schema. `LlmError` enum covers HTTP and parse failures. `extract_tool_input_from_response()` finds the `tool_use` content block and deserializes its `input` into `LlmResponse`.
-- **`llm_registry.rs`** -- `LlmRegistry` struct that holds `Vec<Box<dyn LlmRule>>` with `register()` and `rules()` methods. Same pattern as `Registry` but for `LlmRule` trait objects.
-- **`registry.rs`** -- `Registry` struct that holds `Vec<Box<dyn Rule>>`. The `Rule` trait is defined in `@/src/rules/mod.rs`.
+- **`cli.ts`** -- Async entry point. Uses `commander` for CLI parsing with `exitOverride()` to catch parse errors. Orchestrates: config resolution, registry construction, file discovery via `globSync("**/SKILL.md")`, deterministic rule execution (synchronous per file), LLM rule execution (concurrent via `Promise.all`), and output formatting (text or JSON to stdout).
+- **`diagnostic.ts`** -- Defines `RuleViolation` (produced by both `Rule.run()` and `LlmRule.evaluate()`) and `LintDiagnostic` (the output-facing type). `fromViolation()` converts a `RuleViolation` into a `LintDiagnostic` by attaching rule name and file path. `RuleViolation` has optional `line` and `snippet` fields; `LintDiagnostic` normalizes these to `null` when absent.
+- **`config.ts`** -- `loadConfig()` reads a JSON file, validates `anthropic_api_key` is present and non-empty, and validates that `enabled` and `disabled` are not both specified. `isRuleEnabled()` implements allowlist/denylist filtering logic.
+- **`llm-client.ts`** -- Defines the `LlmAnalyzer` type (async `analyze()` returning `Promise<LlmResponse>`) and `AnthropicClient` class that POSTs to the Anthropic Messages API v1 using tool_use with forced `tool_choice` to enforce a common JSON schema. `extractToolInputFromResponse()` finds the `tool_use` content block and extracts the typed input. Uses native `fetch` with `AbortSignal.timeout(60000)`.
+- **`llm-registry.ts`** / **`registry.ts`** -- Simple container classes that hold arrays of `LlmRule` or `Rule` objects with `register()` methods and `rules` getters.
 - **`rules/`** -- Submodule containing deterministic and LLM rule implementations; see `@/src/rules/docs.md`
 
 ### Things to Know
 
-- `cli::run()` is async. The async boundary exists because LLM rules make HTTP calls via `reqwest`. Deterministic rules remain synchronous and are unaffected.
-- `resolve_config()` in `cli.rs` implements a two-step lookup: explicit `--config` path first, then `.nori-lint.json` in CWD. If neither exists, `Ok(None)` is returned and LLM rules are skipped entirely.
-- Rule filtering happens at the execution loop in `cli.rs`, not inside the registries. Both `Registry` and `LlmRegistry` always hold all registered rules. The `is_rule_enabled()` check is a guard in the per-file iteration loop.
-- The unknown rule name warning in `cli.rs` builds a combined known-rules list from the deterministic registry plus a hardcoded list of LLM rule name strings. When a new LLM rule is added, its name must also be added to this hardcoded list for the warning to work correctly.
-- The `LlmAnalyzer` trait uses `impl Future` in its return type (not `async_trait`), enabling dependency injection without the `async_trait` crate.
+- `run()` returns a numeric exit code rather than calling `process.exit()` directly, enabling testability. The `import.meta.url` guard at the bottom calls `process.exit()` only when run as a script.
+- `resolveConfig()` in `cli.ts` implements a two-step lookup: explicit `--config` path first, then `.nori-lint.json` in CWD. If neither exists, `null` is returned and LLM rules are skipped.
+- Rule filtering happens at the execution loop in `cli.ts`, not inside the registries. Both `Registry` and `LlmRegistry` always hold all registered rules.
+- The unknown rule name warning in `cli.ts` dynamically builds the known-rules list from both registries, unlike the Rust version which used a hardcoded list for LLM rule names.
 - `RuleViolation` is the shared boundary type between both rule tiers and the CLI output pipeline.
-- **Concurrency model** -- LLM rules execute concurrently via I/O multiplexing on the single-threaded tokio runtime (`current_thread` flavor). This is cooperative multitasking, not multi-threading. No task spawning occurs; `join_all` simply awaits all futures in parallel. The `LlmRule` trait does NOT require `Send + Sync` bounds because no tasks are spawned across threads.
-- **Runtime dependencies** -- `Cargo.toml` includes `futures = "0.3"` for `join_all`, and tokio with the `time` feature (used in unit tests for `tokio::time::sleep` to verify concurrent execution timing).
-- **Testing concurrent execution** -- Unit tests in `cli.rs` use a `DelayMockAnalyzer` that sleeps for a fixed duration. The test `rules_execute_concurrently_not_sequentially` verifies that 3 rules with 100ms delays complete in <200ms (concurrent) rather than ~300ms (sequential).
-- Adding a new deterministic rule: implement `Rule` (returning `Vec<RuleViolation>`), re-export in `rules/mod.rs`, register in `default_registry()` in `cli.rs`.
-- Adding a new LLM rule: implement `LlmRule`, re-export in `rules/llm_rules/mod.rs`, register in `cli::run()` inside the `if config.is_some()` block, and add its name to the `llm_rule_names` array in `cli::run()` for unknown-rule-name warnings.
+- **Concurrency model** -- LLM rules execute concurrently via `Promise.all` on the Node.js event loop. Each rule's API call is wrapped in a try/catch to prevent one failure from aborting others. Results are processed sequentially after all promises settle.
+- `commander` is configured with `exitOverride()` so parse errors throw instead of calling `process.exit()`, allowing the `run()` function to return an exit code.
 
 Created and maintained by Nori.

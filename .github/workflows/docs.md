@@ -9,9 +9,9 @@ Path: @/.github/workflows
 
 ### How it fits into the larger codebase
 
-- Acts as the automated quality gate for all code entering the repository -- no code merges without passing formatting, linting, and tests
-- Runs `cargo fmt`, `cargo clippy`, `cargo build`, and `cargo test` against the Rust codebase in `@/src/` and `@/tests/`
-- Uses `Swatinem/rust-cache@v2` on the clippy and build-and-test jobs to cache compiled dependencies between runs
+- Acts as the automated quality gate for all code entering the repository
+- Runs against the TypeScript codebase in `@/src/` and `@/tests/`
+- Uses `actions/setup-node@v4` with Node 22 and npm caching
 
 ### Core Implementation
 
@@ -19,17 +19,16 @@ Path: @/.github/workflows
 
 | Job | Purpose | Key command |
 |---|---|---|
-| `fmt` | Enforces consistent code formatting | `cargo fmt --check` |
-| `clippy` | Static analysis with all warnings treated as errors | `cargo clippy -- -D warnings` |
-| `build-and-test` | Compiles the project and runs all tests | `cargo build && cargo test` |
+| `lint` | ESLint, Prettier, and TypeScript type checking | `npm run lint` (runs `eslint . --max-warnings=0`, `prettier . --check`, `tsc --noEmit`) |
+| `test` | Runs all vitest tests | `npm test` |
+| `build` | Compiles TypeScript to JavaScript | `npm run build` |
 
-- All jobs run on `ubuntu-latest` with the stable Rust toolchain via `dtolnay/rust-toolchain@stable`
-- The `fmt` job additionally installs the `rustfmt` component; the `clippy` job installs the `clippy` component
+- All jobs run on `ubuntu-latest` with Node 22 via `actions/setup-node@v4`
+- Dependencies are installed via `npm ci` with npm caching enabled
 
 ### Things to Know
 
 - The workflow triggers on pushes to `main` and on all pull requests; a concurrency group cancels superseded runs on the same branch
-- The `fmt` job does not use dependency caching since `cargo fmt --check` does not compile code
-- `cargo clippy -- -D warnings` means any Clippy warning fails the build, not just errors
+- The `lint` job runs ESLint, Prettier, and TypeScript type checking via a single `npm run lint` command that uses `concurrently` to run all three in parallel
 
 Created and maintained by Nori.

@@ -5,29 +5,27 @@ Path: @/src/rules
 ### Overview
 
 - Contains all lint rule implementations for SKILL.md files, organized into two tiers: deterministic rules (sync) and LLM rules (async-capable)
-- Deterministic rules implement the `Rule` trait defined in `mod.rs`; LLM rules implement the `LlmRule` trait defined in `@/src/rules/llm_rules/mod.rs`
+- Deterministic rules conform to the `Rule` type defined in `index.ts`; LLM rules conform to the `LlmRule` type defined in `@/src/rules/llm-rules/index.ts`
 
 ### How it fits into the larger codebase
 
-- Deterministic rules are registered into the `Registry` in `@/src/cli.rs` during `run()` -- adding a rule here without registering it has no effect
-- LLM rules are registered into the `LlmRegistry` in `@/src/cli.rs`, gated by the presence of a valid config
-- `mod.rs` re-exports each rule's submodule (including `llm_rules`) and defines the `Rule` trait
-- Both rule types produce `RuleViolation` structs (from `@/src/diagnostic.rs`) which the CLI converts into `LintDiagnostic` records for output
-- Integration tests in `@/tests/cli.rs` exercise deterministic rules through the compiled binary; LLM rule unit tests live in `@/src/rules/llm_rules/` alongside the implementation
+- Deterministic rules are registered into the `Registry` in `@/src/cli.ts` via `defaultRegistry()` -- adding a rule here without registering it has no effect
+- LLM rules are registered into the `LlmRegistry` in `@/src/cli.ts` via `defaultLlmRegistry()`, gated by the presence of a valid config
+- `index.ts` defines the `Rule` type with `name`, `description`, and `run(input) -> Array<RuleViolation>`
+- Both rule types produce `RuleViolation` structs (from `@/src/diagnostic.ts`) which the CLI converts into `LintDiagnostic` records for output
+- Unit tests live alongside each rule as `.test.ts` files
 
 ### Core Implementation
 
-- **`mod.rs`** -- Defines the `Rule` trait with three required methods: `name() -> &str`, `description() -> &str`, `run(&str) -> Vec<RuleViolation>`. Re-exports submodules for all deterministic rules and the `llm_rules` submodule.
-- **Deterministic rules** -- Stateless unit structs implementing `Rule`, including `bold_italics.rs`, `line_count.rs`, `markdown_links.rs`, `redundant_title.rs`, `required_tags.rs`, `unclosed_tags.rs`. They receive the full file content as `&str` and return `Vec<RuleViolation>`.
-- **`llm_rules/`** -- Submodule containing the `LlmRule` trait and LLM-powered rule implementations. See `@/src/rules/llm_rules/docs.md`.
+- **`index.ts`** -- Defines the `Rule` type: an object with `name: string`, `description: string`, and `run: (input: string) => Array<RuleViolation>`.
+- **Deterministic rules** -- Exported as constant objects conforming to `Rule`. Each receives full file content as a string and returns an array of violations. Rules include bold/italic detection, line count enforcement, markdown link detection, redundant title detection, required tag checking, and unclosed tag checking.
+- **`llm-rules/`** -- Submodule containing the `LlmRule` type and LLM-powered rule implementations. See `@/src/rules/llm-rules/docs.md`.
 
 ### Things to Know
 
-- The `Rule` trait (deterministic) and `LlmRule` trait (LLM) are completely separate traits with different method signatures. `Rule::run()` receives only file content. `LlmRule::evaluate()` receives both file content and the LLM's response text. `LlmRule::system_prompt()` provides the prompt sent to the LLM.
-- `Rule::run()` returns `Vec<RuleViolation>`, allowing a single rule to report multiple violations per file. Rules that detect at most one violation (e.g., `line_count`, `required_tags`, `unclosed_tags`) return a single-element vec or an empty vec. Rules that scan line-by-line (e.g., `bold_italics`, `markdown_links`) may return many violations from one invocation.
-- The `RuleViolation` struct has optional `line` and `snippet` fields. File-level rules (like `line_count`) leave these as `None`. Line-level rules (like `bold_italics`, `markdown_links`, and `redundant_title`) populate both fields with the 1-indexed line number and the offending line text.
-- The `markdown_links` rule introduces an `in_example_block` state tracker to skip content inside XML example tags (`<good-example>`, `<bad-example>`, `<good_example>`, `<bad_example>`). This is a pattern not used by other deterministic rules -- it allows the rule to avoid flagging markdown links that appear inside illustrative examples.
-- Both `bold_italics` and `markdown_links` use a `strip_inline_code()` helper to replace inline code spans with spaces before scanning for violations. These are currently independent copies of the same function, not a shared utility.
-- Each rule module includes its own `#[cfg(test)]` unit tests verifying pass/fail behavior and boundary conditions.
+- The `Rule` type (deterministic) and `LlmRule` type (LLM) are separate types with different shapes. `Rule.run()` receives only file content. `LlmRule.evaluate()` receives both file content and the LLM's parsed violations. `LlmRule.systemPrompt` provides the prompt sent to the LLM.
+- `Rule.run()` returns `Array<RuleViolation>`, allowing a single rule to report multiple violations per file. Line-level rules (bold_italics, markdown_links) may return many violations; file-level rules (line_count, required_tags) return zero or one.
+- The `markdown_links` rule tracks `inExampleBlock` state to skip content inside XML example tags (`<good-example>`, `<bad-example>`, `<good_example>`, `<bad_example>`). This pattern is not used by other deterministic rules.
+- Both `bold_italics` and `markdown_links` use independent copies of a `stripInlineCode()` helper to replace inline code spans with spaces before scanning.
 
 Created and maintained by Nori.
