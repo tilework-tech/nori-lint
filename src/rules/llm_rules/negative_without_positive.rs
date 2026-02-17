@@ -1,7 +1,5 @@
-use serde::Deserialize;
-
 use crate::diagnostic::RuleViolation;
-use crate::rules::llm_rules::{LlmRule, strip_markdown_fences};
+use crate::rules::llm_rules::{LlmRule, LlmViolation};
 
 const SYSTEM_PROMPT: &str = r#"Analyze the provided SKILL.md file for instructions that tell the reader what NOT to do without providing a corresponding example or explanation of what TO do instead.
 
@@ -35,23 +33,7 @@ Important: Do NOT flag absolute prohibitions that are safety/policy rules with n
 
 Only flag instructional or guidance-style negatives where a positive alternative would genuinely help the reader know what to do.
 
-Respond ONLY with a JSON object in this exact format:
-{"has_violations": true/false, "negatives": [{"text": "the exact offending passage", "suggestion": "what positive guidance is missing"}]}
-
-If there are no violations, respond with:
-{"has_violations": false, "negatives": []}"#;
-
-#[derive(Deserialize)]
-struct LlmResponse {
-    has_violations: bool,
-    negatives: Vec<Negative>,
-}
-
-#[derive(Deserialize)]
-struct Negative {
-    text: String,
-    suggestion: String,
-}
+For each violation found, report the negative instruction as "text" and what positive alternative is missing as "reason"."#;
 
 pub struct NegativeWithoutPositiveRule;
 
@@ -68,23 +50,17 @@ impl LlmRule for NegativeWithoutPositiveRule {
         SYSTEM_PROMPT
     }
 
-    fn evaluate(&self, _input: &str, llm_response: &str) -> Option<RuleViolation> {
-        let json_str = strip_markdown_fences(llm_response);
-        let parsed: LlmResponse = serde_json::from_str(json_str).ok()?;
-
-        if !parsed.has_violations || parsed.negatives.is_empty() {
+    fn evaluate(&self, _input: &str, violations: &[LlmViolation]) -> Option<RuleViolation> {
+        if violations.is_empty() {
             return None;
         }
-
-        let details: Vec<String> = parsed
-            .negatives
+        let details: Vec<String> = violations
             .iter()
-            .map(|n| format!("\"{}\" (suggestion: {})", n.text, n.suggestion))
+            .map(|v| format!("\"{}\" (suggestion: {})", v.text, v.reason))
             .collect();
-
         Some(RuleViolation {
             message: format!(
-                "File contains instructions saying what NOT to do without a positive alternative: {}",
+                "File contains negative instructions without positive alternatives: {}",
                 details.join(", ")
             ),
             line: None,
@@ -96,6 +72,7 @@ impl LlmRule for NegativeWithoutPositiveRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rules::llm_rules::LlmViolation;
 
     #[test]
     fn has_correct_name() {
@@ -116,40 +93,28 @@ mod tests {
     }
 
     #[test]
-    fn system_prompt_asks_for_json_response() {
+    fn returns_none_when_no_violations() {
         let rule = NegativeWithoutPositiveRule;
-        let prompt = rule.system_prompt();
-        assert!(
-            prompt.contains("has_violations") && prompt.contains("negatives"),
-            "system prompt should request JSON with has_violations and negatives fields"
-        );
-    }
-
-    #[test]
-    fn returns_none_when_llm_finds_no_violations() {
-        let rule = NegativeWithoutPositiveRule;
-        let llm_response = r#"{"has_violations": false, "negatives": []}"#;
-        let result = rule.evaluate("some skill content", llm_response);
+        let result = rule.evaluate("some skill content", &[]);
         assert!(result.is_none());
     }
 
     #[test]
     fn returns_violation_when_llm_finds_negatives_without_positives() {
         let rule = NegativeWithoutPositiveRule;
-        let llm_response = r#"{
-            "has_violations": true,
-            "negatives": [
-                {
-                    "text": "Don't use global variables.",
-                    "suggestion": "Should suggest passing dependencies as function parameters"
+        let result = rule.evaluate(
+            "some skill content",
+            &[
+                LlmViolation {
+                    text: "Don't use global variables.".into(),
+                    reason: "Should suggest passing dependencies as function parameters".into(),
                 },
-                {
-                    "text": "Avoid writing long functions.",
-                    "suggestion": "Should suggest extracting into smaller helper functions"
-                }
-            ]
-        }"#;
-        let result = rule.evaluate("some skill content", llm_response);
+                LlmViolation {
+                    text: "Avoid writing long functions.".into(),
+                    reason: "Should suggest extracting into smaller helper functions".into(),
+                },
+            ],
+        );
         assert!(
             result.is_some(),
             "should return a violation when negatives are found"
@@ -177,16 +142,13 @@ mod tests {
     #[test]
     fn returns_violation_with_single_negative() {
         let rule = NegativeWithoutPositiveRule;
-        let llm_response = r#"{
-            "has_violations": true,
-            "negatives": [
-                {
-                    "text": "Never use eval().",
-                    "suggestion": "Should suggest safer alternatives like JSON.parse"
-                }
-            ]
-        }"#;
-        let result = rule.evaluate("content", llm_response);
+        let result = rule.evaluate(
+            "content",
+            &[LlmViolation {
+                text: "Never use eval().".into(),
+                reason: "Should suggest safer alternatives like JSON.parse".into(),
+            }],
+        );
         assert!(
             result.is_some(),
             "should return a violation for a single negative"
@@ -196,70 +158,6 @@ mod tests {
             violation.message.contains("Never use eval()."),
             "violation message should include the offending text, got: {}",
             violation.message
-        );
-    }
-
-    #[test]
-    fn returns_none_for_malformed_llm_response() {
-        let rule = NegativeWithoutPositiveRule;
-        let llm_response = "this is not json at all";
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_none(),
-            "should return None for unparseable LLM response rather than panicking"
-        );
-    }
-
-    #[test]
-    fn returns_none_when_has_violations_is_true_but_negatives_empty() {
-        let rule = NegativeWithoutPositiveRule;
-        let llm_response = r#"{"has_violations": true, "negatives": []}"#;
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_none(),
-            "should return None when no actual negatives are listed"
-        );
-    }
-
-    #[test]
-    fn handles_markdown_fenced_json_response() {
-        let rule = NegativeWithoutPositiveRule;
-        let llm_response = "```json\n{\"has_violations\": true, \"negatives\": [{\"text\": \"Don't hardcode values.\", \"suggestion\": \"Use constants or config\"}]}\n```";
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_some(),
-            "should parse JSON from within markdown fences"
-        );
-        let violation = result.unwrap();
-        assert!(
-            violation.message.contains("Don't hardcode values."),
-            "should parse JSON from within markdown fences, got: {}",
-            violation.message
-        );
-    }
-
-    #[test]
-    fn handles_bare_backtick_fenced_response() {
-        let rule = NegativeWithoutPositiveRule;
-        let llm_response = "```\n{\"has_violations\": false, \"negatives\": []}\n```";
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_none(),
-            "should parse JSON from bare backtick fences"
-        );
-    }
-
-    #[test]
-    fn returns_none_when_has_violations_is_false_despite_negatives_populated() {
-        let rule = NegativeWithoutPositiveRule;
-        let llm_response = r#"{
-            "has_violations": false,
-            "negatives": [{"text": "Don't do X.", "suggestion": "Do Y instead."}]
-        }"#;
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_none(),
-            "should trust has_violations flag over array contents"
         );
     }
 }

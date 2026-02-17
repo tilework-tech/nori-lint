@@ -1,7 +1,5 @@
-use serde::Deserialize;
-
 use crate::diagnostic::RuleViolation;
-use crate::rules::llm_rules::{LlmRule, strip_markdown_fences};
+use crate::rules::llm_rules::{LlmRule, LlmViolation};
 
 const SYSTEM_PROMPT: &str = r#"You are reviewing a SKILL.md file. These files are instructions written by a human to configure an AI assistant's behavior. The audience is the AI assistant itself.
 
@@ -28,23 +26,7 @@ Only flag cases where "the user" clearly refers to the author of the skill file.
 - Quoted examples or code snippets
 - References to third-party users
 
-Respond ONLY with a JSON object in this exact format:
-{"has_violations": true/false, "violations": [{"original": "the exact offending passage", "suggested": "the corrected first-person version"}]}
-
-If there are no violations, respond with:
-{"has_violations": false, "violations": []}"#;
-
-#[derive(Deserialize)]
-struct LlmResponse {
-    has_violations: bool,
-    violations: Vec<Violation>,
-}
-
-#[derive(Deserialize)]
-struct Violation {
-    original: String,
-    suggested: String,
-}
+For each violation found, report the offending passage as "text" and the corrected first-person version as "reason"."#;
 
 pub struct FirstPersonRule;
 
@@ -61,20 +43,14 @@ impl LlmRule for FirstPersonRule {
         SYSTEM_PROMPT
     }
 
-    fn evaluate(&self, _input: &str, llm_response: &str) -> Option<RuleViolation> {
-        let json_str = strip_markdown_fences(llm_response);
-        let parsed: LlmResponse = serde_json::from_str(json_str).ok()?;
-
-        if !parsed.has_violations || parsed.violations.is_empty() {
+    fn evaluate(&self, _input: &str, violations: &[LlmViolation]) -> Option<RuleViolation> {
+        if violations.is_empty() {
             return None;
         }
-
-        let details: Vec<String> = parsed
-            .violations
+        let details: Vec<String> = violations
             .iter()
-            .map(|v| format!("\"{}\" -> \"{}\"", v.original, v.suggested))
+            .map(|v| format!("\"{}\" -> \"{}\"", v.text, v.reason))
             .collect();
-
         Some(RuleViolation {
             message: format!(
                 "File refers to the skill author as 'the user' instead of first person: {}",
@@ -89,6 +65,7 @@ impl LlmRule for FirstPersonRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rules::llm_rules::LlmViolation;
 
     #[test]
     fn has_correct_name() {
@@ -109,36 +86,22 @@ mod tests {
     }
 
     #[test]
-    fn system_prompt_asks_for_json_response() {
+    fn returns_none_when_no_violations() {
         let rule = FirstPersonRule;
-        let prompt = rule.system_prompt();
-        assert!(
-            prompt.contains("has_violations") && prompt.contains("violations"),
-            "system prompt should request JSON with has_violations and violations fields"
-        );
-    }
-
-    #[test]
-    fn returns_none_when_llm_finds_no_violations() {
-        let rule = FirstPersonRule;
-        let llm_response = r#"{"has_violations": false, "violations": []}"#;
-        let result = rule.evaluate("some skill content", llm_response);
+        let result = rule.evaluate("some skill content", &[]);
         assert!(result.is_none());
     }
 
     #[test]
     fn returns_violation_when_llm_finds_third_person_references() {
         let rule = FirstPersonRule;
-        let llm_response = r#"{
-            "has_violations": true,
-            "violations": [
-                {
-                    "original": "Ask the user to answer the question",
-                    "suggested": "Ask me to answer the question"
-                }
-            ]
-        }"#;
-        let result = rule.evaluate("Ask the user to answer the question", llm_response);
+        let result = rule.evaluate(
+            "Ask the user to answer the question",
+            &[LlmViolation {
+                text: "Ask the user to answer the question".into(),
+                reason: "Ask me to answer the question".into(),
+            }],
+        );
         assert!(result.is_some());
         let violation = result.unwrap();
         assert!(
@@ -158,20 +121,19 @@ mod tests {
     #[test]
     fn returns_violation_with_multiple_third_person_references() {
         let rule = FirstPersonRule;
-        let llm_response = r#"{
-            "has_violations": true,
-            "violations": [
-                {
-                    "original": "Tell the user about the error",
-                    "suggested": "Tell me about the error"
+        let result = rule.evaluate(
+            "content",
+            &[
+                LlmViolation {
+                    text: "Tell the user about the error".into(),
+                    reason: "Tell me about the error".into(),
                 },
-                {
-                    "original": "Wait for the user's response",
-                    "suggested": "Wait for my response"
-                }
-            ]
-        }"#;
-        let result = rule.evaluate("content", llm_response);
+                LlmViolation {
+                    text: "Wait for the user's response".into(),
+                    reason: "Wait for my response".into(),
+                },
+            ],
+        );
         assert!(result.is_some());
         let violation = result.unwrap();
         assert!(
@@ -183,72 +145,6 @@ mod tests {
             violation.message.contains("Wait for the user's response"),
             "should include second offending text, got: {}",
             violation.message
-        );
-    }
-
-    #[test]
-    fn returns_none_for_malformed_llm_response() {
-        let rule = FirstPersonRule;
-        let llm_response = "this is not json at all";
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_none(),
-            "should return None for unparseable LLM response rather than panicking"
-        );
-    }
-
-    #[test]
-    fn returns_none_when_has_violations_is_true_but_violations_empty() {
-        let rule = FirstPersonRule;
-        let llm_response = r#"{"has_violations": true, "violations": []}"#;
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_none(),
-            "should return None when no actual violations are listed"
-        );
-    }
-
-    #[test]
-    fn handles_markdown_fenced_json_response() {
-        let rule = FirstPersonRule;
-        let llm_response = "```json\n{\"has_violations\": true, \"violations\": [{\"original\": \"Ask the user for input\", \"suggested\": \"Ask me for input\"}]}\n```";
-        let result = rule.evaluate("content", llm_response);
-        assert!(result.is_some());
-        let violation = result.unwrap();
-        assert!(
-            violation.message.contains("Ask the user for input"),
-            "should parse JSON from within markdown fences, got: {}",
-            violation.message
-        );
-    }
-
-    #[test]
-    fn handles_bare_backtick_fenced_response() {
-        let rule = FirstPersonRule;
-        let llm_response = "```\n{\"has_violations\": false, \"violations\": []}\n```";
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_none(),
-            "should parse JSON from bare backtick fences"
-        );
-    }
-
-    #[test]
-    fn returns_none_when_has_violations_is_false_but_violations_non_empty() {
-        let rule = FirstPersonRule;
-        let llm_response = r#"{
-            "has_violations": false,
-            "violations": [
-                {
-                    "original": "Tell the user about the error",
-                    "suggested": "Tell me about the error"
-                }
-            ]
-        }"#;
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_none(),
-            "should trust has_violations flag over array contents"
         );
     }
 }

@@ -1,7 +1,5 @@
-use serde::Deserialize;
-
 use crate::diagnostic::RuleViolation;
-use crate::rules::llm_rules::{LlmRule, strip_markdown_fences};
+use crate::rules::llm_rules::{LlmRule, LlmViolation};
 
 const SYSTEM_PROMPT: &str = r#"Find passages in the provided file where the author wastes tokens explaining concepts that a modern LLM already knows from its training data.
 
@@ -34,24 +32,7 @@ Sometimes there can be conflicts between the branch you are merging and the main
 
 In the above examples, the author explains how main branch protection works and that merge conflicts can exist. These are redundant and should be removed.
 
-Respond ONLY with a JSON object in this exact format:
-{"has_violations": true/false, "explanations": [{"text": "the exact offending passage", "reason": "why this is redundant"}]}
-
-If there are no violations, respond with:
-{"has_violations": false, "explanations": []}"#;
-
-#[derive(Deserialize)]
-struct LlmResponse {
-    has_violations: bool,
-    explanations: Vec<Explanation>,
-}
-
-#[derive(Deserialize)]
-struct Explanation {
-    text: String,
-    #[allow(dead_code)]
-    reason: String,
-}
+For each violation found, report the redundant explanation as "text" and why it is redundant as "reason"."#;
 
 pub struct RedundantExplanationRule;
 
@@ -68,23 +49,17 @@ impl LlmRule for RedundantExplanationRule {
         SYSTEM_PROMPT
     }
 
-    fn evaluate(&self, _input: &str, llm_response: &str) -> Option<RuleViolation> {
-        let json_str = strip_markdown_fences(llm_response);
-        let parsed: LlmResponse = serde_json::from_str(json_str).ok()?;
-
-        if !parsed.has_violations || parsed.explanations.is_empty() {
+    fn evaluate(&self, _input: &str, violations: &[LlmViolation]) -> Option<RuleViolation> {
+        if violations.is_empty() {
             return None;
         }
-
-        let details: Vec<String> = parsed
-            .explanations
+        let details: Vec<String> = violations
             .iter()
             .map(|e| format!("\"{}\"", e.text))
             .collect();
-
         Some(RuleViolation {
             message: format!(
-                "File contains explanations of concepts an LLM already knows: {}",
+                "File contains explanations of concepts the LLM already knows: {}",
                 details.join(", ")
             ),
             line: None,
@@ -96,6 +71,7 @@ impl LlmRule for RedundantExplanationRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rules::llm_rules::LlmViolation;
 
     #[test]
     fn has_correct_name() {
@@ -116,40 +92,28 @@ mod tests {
     }
 
     #[test]
-    fn system_prompt_asks_for_json_response() {
+    fn returns_none_when_no_violations() {
         let rule = RedundantExplanationRule;
-        let prompt = rule.system_prompt();
-        assert!(
-            prompt.contains("has_violations") && prompt.contains("explanations"),
-            "system prompt should request JSON with has_violations and explanations fields"
-        );
-    }
-
-    #[test]
-    fn returns_none_when_llm_finds_no_violations() {
-        let rule = RedundantExplanationRule;
-        let llm_response = r#"{"has_violations": false, "explanations": []}"#;
-        let result = rule.evaluate("some skill content", llm_response);
+        let result = rule.evaluate("some skill content", &[]);
         assert!(result.is_none());
     }
 
     #[test]
     fn returns_violation_when_llm_finds_redundant_explanations() {
         let rule = RedundantExplanationRule;
-        let llm_response = r#"{
-            "has_violations": true,
-            "explanations": [
-                {
-                    "text": "GCP stands for Google Cloud Platform",
-                    "reason": "LLMs are trained on extensive documentation about GCP"
+        let result = rule.evaluate(
+            "some skill content with explanations",
+            &[
+                LlmViolation {
+                    text: "GCP stands for Google Cloud Platform".into(),
+                    reason: "LLMs are trained on extensive documentation about GCP".into(),
                 },
-                {
-                    "text": "JSON is a lightweight data interchange format",
-                    "reason": "JSON is fundamental knowledge for any LLM"
-                }
-            ]
-        }"#;
-        let result = rule.evaluate("some skill content with explanations", llm_response);
+                LlmViolation {
+                    text: "JSON is a lightweight data interchange format".into(),
+                    reason: "JSON is fundamental knowledge for any LLM".into(),
+                },
+            ],
+        );
         assert!(result.is_some());
         let violation = result.unwrap();
         assert!(
@@ -171,16 +135,13 @@ mod tests {
     #[test]
     fn returns_violation_with_single_explanation() {
         let rule = RedundantExplanationRule;
-        let llm_response = r#"{
-            "has_violations": true,
-            "explanations": [
-                {
-                    "text": "REST stands for Representational State Transfer",
-                    "reason": "Well-known concept"
-                }
-            ]
-        }"#;
-        let result = rule.evaluate("content", llm_response);
+        let result = rule.evaluate(
+            "content",
+            &[LlmViolation {
+                text: "REST stands for Representational State Transfer".into(),
+                reason: "Well-known concept".into(),
+            }],
+        );
         assert!(result.is_some());
         let violation = result.unwrap();
         assert!(
@@ -189,55 +150,6 @@ mod tests {
                 .contains("REST stands for Representational State Transfer"),
             "violation message should include the redundant text, got: {}",
             violation.message
-        );
-    }
-
-    #[test]
-    fn returns_none_for_malformed_llm_response() {
-        let rule = RedundantExplanationRule;
-        let llm_response = "this is not json at all";
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_none(),
-            "should return None for unparseable LLM response rather than panicking"
-        );
-    }
-
-    #[test]
-    fn returns_none_when_has_violations_is_true_but_explanations_empty() {
-        let rule = RedundantExplanationRule;
-        let llm_response = r#"{"has_violations": true, "explanations": []}"#;
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_none(),
-            "should return None when no actual explanations are listed"
-        );
-    }
-
-    #[test]
-    fn handles_markdown_fenced_json_response() {
-        let rule = RedundantExplanationRule;
-        let llm_response = "```json\n{\"has_violations\": true, \"explanations\": [{\"text\": \"Git is a version control system\", \"reason\": \"well known\"}]}\n```";
-        let result = rule.evaluate("content", llm_response);
-        assert!(result.is_some());
-        let violation = result.unwrap();
-        assert!(
-            violation
-                .message
-                .contains("Git is a version control system"),
-            "should parse JSON from within markdown fences, got: {}",
-            violation.message
-        );
-    }
-
-    #[test]
-    fn handles_bare_backtick_fenced_response() {
-        let rule = RedundantExplanationRule;
-        let llm_response = "```\n{\"has_violations\": false, \"explanations\": []}\n```";
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_none(),
-            "should parse JSON from bare backtick fences"
         );
     }
 }

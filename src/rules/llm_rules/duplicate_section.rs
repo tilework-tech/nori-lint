@@ -1,7 +1,5 @@
-use serde::Deserialize;
-
 use crate::diagnostic::RuleViolation;
-use crate::rules::llm_rules::{LlmRule, strip_markdown_fences};
+use crate::rules::llm_rules::{LlmRule, LlmViolation};
 
 const SYSTEM_PROMPT: &str = r###"Find sections in the provided SKILL.md file that cover substantially the same ground. This includes:
 
@@ -13,26 +11,8 @@ What NOT to flag:
 - Sections that address the same topic but from genuinely different angles (e.g., "## When to Use" and "## When NOT to Use")
 - Repeated structure across different phases or steps (e.g., each phase having its own "Examples" subsection is fine)
 
-Respond ONLY with a JSON object in this exact format:
-{"has_violations": true/false, "sections": [{"heading_a": "first section heading", "heading_b": "second section heading", "reason": "why these are duplicates"}]}
-
-If there are no violations, respond with:
-{"has_violations": false, "sections": []}
+For each violation found, report both duplicate section headings joined by " / " as "text" and explain why they overlap as "reason".
 "###;
-
-#[derive(Deserialize)]
-struct LlmResponse {
-    has_violations: bool,
-    sections: Vec<SectionPair>,
-}
-
-#[derive(Deserialize)]
-struct SectionPair {
-    heading_a: String,
-    heading_b: String,
-    #[allow(dead_code)]
-    reason: String,
-}
 
 pub struct DuplicateSectionRule;
 
@@ -49,23 +29,17 @@ impl LlmRule for DuplicateSectionRule {
         SYSTEM_PROMPT
     }
 
-    fn evaluate(&self, _input: &str, llm_response: &str) -> Option<RuleViolation> {
-        let json_str = strip_markdown_fences(llm_response);
-        let parsed: LlmResponse = serde_json::from_str(json_str).ok()?;
-
-        if !parsed.has_violations || parsed.sections.is_empty() {
+    fn evaluate(&self, _input: &str, violations: &[LlmViolation]) -> Option<RuleViolation> {
+        if violations.is_empty() {
             return None;
         }
-
-        let details: Vec<String> = parsed
-            .sections
+        let details: Vec<String> = violations
             .iter()
-            .map(|s| format!("\"{}\" and \"{}\"", s.heading_a, s.heading_b))
+            .map(|s| format!("\"{}\"", s.text))
             .collect();
-
         Some(RuleViolation {
             message: format!(
-                "File contains sections that cover the same ground: {}",
+                "File contains sections that cover substantially the same ground: {}",
                 details.join(", ")
             ),
             line: None,
@@ -77,6 +51,7 @@ impl LlmRule for DuplicateSectionRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rules::llm_rules::LlmViolation;
 
     #[test]
     fn has_correct_name() {
@@ -97,38 +72,25 @@ mod tests {
     }
 
     #[test]
-    fn system_prompt_asks_for_json_response() {
-        let rule = DuplicateSectionRule;
-        let prompt = rule.system_prompt();
-        assert!(
-            prompt.contains("has_violations") && prompt.contains("sections"),
-            "system prompt should request JSON with has_violations and sections fields"
-        );
-    }
-
-    #[test]
     fn returns_none_when_no_violations() {
         let rule = DuplicateSectionRule;
-        let llm_response = r#"{"has_violations": false, "sections": []}"#;
-        let result = rule.evaluate("some skill content", llm_response);
+        let result = rule.evaluate("some skill content", &[]);
         assert!(result.is_none());
     }
 
     #[test]
     fn returns_violation_when_duplicate_sections_found() {
         let rule = DuplicateSectionRule;
-        let llm_response = "{\"has_violations\": true, \"sections\": [{\"heading_a\": \"Red Flags\", \"heading_b\": \"Common Mistakes\", \"reason\": \"Both sections list the same anti-patterns\"}]}";
-        let result = rule.evaluate("content with duplicate sections", llm_response);
+        let violations = &[LlmViolation {
+            text: "Setup / Installation".into(),
+            reason: "both cover initial configuration".into(),
+        }];
+        let result = rule.evaluate("content with duplicate sections", violations);
         assert!(result.is_some());
         let violation = result.unwrap();
         assert!(
-            violation.message.contains("Red Flags"),
-            "violation message should include first heading, got: {}",
-            violation.message
-        );
-        assert!(
-            violation.message.contains("Common Mistakes"),
-            "violation message should include second heading, got: {}",
+            violation.message.contains("Setup / Installation"),
+            "violation message should include the section pair, got: {}",
             violation.message
         );
     }
@@ -136,8 +98,7 @@ mod tests {
     #[test]
     fn returns_none_for_empty_sections_even_if_flagged() {
         let rule = DuplicateSectionRule;
-        let llm_response = r#"{"has_violations": true, "sections": []}"#;
-        let result = rule.evaluate("content", llm_response);
+        let result = rule.evaluate("content", &[]);
         assert!(
             result.is_none(),
             "should return None when no actual sections are listed"
@@ -145,38 +106,22 @@ mod tests {
     }
 
     #[test]
-    fn handles_markdown_fenced_json() {
-        let rule = DuplicateSectionRule;
-        let llm_response = "```json\n{\"has_violations\": true, \"sections\": [{\"heading_a\": \"Overview\", \"heading_b\": \"Summary\", \"reason\": \"same content\"}]}\n```";
-        let result = rule.evaluate("content", llm_response);
-        assert!(result.is_some());
-        let violation = result.unwrap();
-        assert!(
-            violation.message.contains("Overview"),
-            "should parse JSON from within markdown fences, got: {}",
-            violation.message
-        );
-    }
-
-    #[test]
-    fn returns_none_for_malformed_json() {
-        let rule = DuplicateSectionRule;
-        let llm_response = "this is not json at all";
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_none(),
-            "should return None for unparseable LLM response rather than panicking"
-        );
-    }
-
-    #[test]
     fn reports_multiple_duplicate_pairs() {
         let rule = DuplicateSectionRule;
-        let llm_response = "{\"has_violations\": true, \"sections\": [{\"heading_a\": \"Red Flags\", \"heading_b\": \"Common Mistakes\", \"reason\": \"overlap\"}, {\"heading_a\": \"Overview\", \"heading_b\": \"Introduction\", \"reason\": \"overlap\"}]}";
-        let result = rule.evaluate("content", llm_response);
+        let violations = &[
+            LlmViolation {
+                text: "Red Flags / Common Mistakes".into(),
+                reason: "overlap".into(),
+            },
+            LlmViolation {
+                text: "Overview / Introduction".into(),
+                reason: "overlap".into(),
+            },
+        ];
+        let result = rule.evaluate("content", violations);
         assert!(result.is_some());
         let violation = result.unwrap();
-        assert!(violation.message.contains("Red Flags"));
-        assert!(violation.message.contains("Overview"));
+        assert!(violation.message.contains("Red Flags / Common Mistakes"));
+        assert!(violation.message.contains("Overview / Introduction"));
     }
 }

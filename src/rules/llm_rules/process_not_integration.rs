@@ -1,7 +1,5 @@
-use serde::Deserialize;
-
 use crate::diagnostic::RuleViolation;
-use crate::rules::llm_rules::{LlmRule, strip_markdown_fences};
+use crate::rules::llm_rules::{LlmRule, LlmViolation};
 
 const SYSTEM_PROMPT: &str = r#"Determine whether the provided SKILL.md file is an "integration" (a reference manual) or a "process" (a step-by-step workflow).
 
@@ -24,25 +22,9 @@ An **integration skill** is essentially a reference manual documenting what a to
 
 A skill can be a hybrid — some process content mixed with reference material. Only flag a skill as an integration if the **majority** of its content is reference/catalog material rather than process steps.
 
-Respond ONLY with a JSON object in this exact format:
-{"is_integration": true/false, "confidence": "high"/"medium"/"low", "evidence": [{"text": "the exact passage that indicates integration style", "reason": "why this is integration-style content"}]}
+Only set has_violations to true if you have HIGH confidence that this file is an integration/reference manual rather than a process. If confidence is medium or low, set has_violations to false.
 
-If the skill is a process (not an integration), respond with:
-{"is_integration": false, "confidence": "high", "evidence": []}"#;
-
-#[derive(Deserialize)]
-struct LlmResponse {
-    is_integration: bool,
-    confidence: String,
-    evidence: Vec<Evidence>,
-}
-
-#[derive(Deserialize)]
-struct Evidence {
-    text: String,
-    #[allow(dead_code)]
-    reason: String,
-}
+For each piece of evidence, report the passage that indicates integration style as "text" and explain why it is integration-style content as "reason"."#;
 
 pub struct ProcessNotIntegrationRule;
 
@@ -59,20 +41,14 @@ impl LlmRule for ProcessNotIntegrationRule {
         SYSTEM_PROMPT
     }
 
-    fn evaluate(&self, _input: &str, llm_response: &str) -> Option<RuleViolation> {
-        let json_str = strip_markdown_fences(llm_response);
-        let parsed: LlmResponse = serde_json::from_str(json_str).ok()?;
-
-        if !parsed.is_integration || parsed.confidence != "high" || parsed.evidence.is_empty() {
+    fn evaluate(&self, _input: &str, violations: &[LlmViolation]) -> Option<RuleViolation> {
+        if violations.is_empty() {
             return None;
         }
-
-        let details: Vec<String> = parsed
-            .evidence
+        let details: Vec<String> = violations
             .iter()
             .map(|e| format!("\"{}\"", e.text))
             .collect();
-
         Some(RuleViolation {
             message: format!(
                 "Skill file reads as a tool integration/reference manual rather than a process: {}",
@@ -87,6 +63,7 @@ impl LlmRule for ProcessNotIntegrationRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rules::llm_rules::LlmViolation;
 
     #[test]
     fn has_correct_name() {
@@ -113,20 +90,9 @@ mod tests {
     }
 
     #[test]
-    fn system_prompt_requests_expected_json_format() {
-        let rule = ProcessNotIntegrationRule;
-        let prompt = rule.system_prompt();
-        assert!(
-            prompt.contains("is_integration") && prompt.contains("evidence"),
-            "system prompt should request JSON with is_integration and evidence fields"
-        );
-    }
-
-    #[test]
     fn returns_none_when_skill_is_a_process() {
         let rule = ProcessNotIntegrationRule;
-        let llm_response = r#"{"is_integration": false, "confidence": "high", "evidence": []}"#;
-        let result = rule.evaluate("some skill content", llm_response);
+        let result = rule.evaluate("some skill content", &[]);
         assert!(
             result.is_none(),
             "should return None when skill is identified as a process"
@@ -136,21 +102,17 @@ mod tests {
     #[test]
     fn returns_violation_when_skill_is_an_integration_with_high_confidence() {
         let rule = ProcessNotIntegrationRule;
-        let llm_response = r#"{
-            "is_integration": true,
-            "confidence": "high",
-            "evidence": [
-                {
-                    "text": "--name (required): Clear, searchable title",
-                    "reason": "Parameter reference listing typical of integration docs"
-                },
-                {
-                    "text": "Returns confirmation with artifact ID",
-                    "reason": "Declarative output description rather than a process step"
-                }
-            ]
-        }"#;
-        let result = rule.evaluate("some integration-style content", llm_response);
+        let violations = &[
+            LlmViolation {
+                text: "--name (required): Clear, searchable title".into(),
+                reason: "Parameter reference listing typical of integration docs".into(),
+            },
+            LlmViolation {
+                text: "Returns confirmation with artifact ID".into(),
+                reason: "Declarative output description rather than a process step".into(),
+            },
+        ];
+        let result = rule.evaluate("some integration-style content", violations);
         assert!(
             result.is_some(),
             "should return a violation for high-confidence integration detection"
@@ -173,95 +135,12 @@ mod tests {
     }
 
     #[test]
-    fn returns_none_when_confidence_is_medium() {
-        let rule = ProcessNotIntegrationRule;
-        let llm_response = r#"{
-            "is_integration": true,
-            "confidence": "medium",
-            "evidence": [
-                {
-                    "text": "some ambiguous content",
-                    "reason": "could be either"
-                }
-            ]
-        }"#;
-        let result = rule.evaluate("hybrid skill content", llm_response);
-        assert!(
-            result.is_none(),
-            "should return None when confidence is not high"
-        );
-    }
-
-    #[test]
-    fn returns_none_when_confidence_is_low() {
-        let rule = ProcessNotIntegrationRule;
-        let llm_response = r#"{
-            "is_integration": true,
-            "confidence": "low",
-            "evidence": [
-                {
-                    "text": "minor reference material",
-                    "reason": "barely qualifies"
-                }
-            ]
-        }"#;
-        let result = rule.evaluate("mostly process skill", llm_response);
-        assert!(
-            result.is_none(),
-            "should return None when confidence is low"
-        );
-    }
-
-    #[test]
-    fn returns_none_for_malformed_llm_response() {
-        let rule = ProcessNotIntegrationRule;
-        let llm_response = "this is not json at all";
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_none(),
-            "should return None for unparseable LLM response rather than panicking"
-        );
-    }
-
-    #[test]
     fn returns_none_when_is_integration_true_but_evidence_empty() {
         let rule = ProcessNotIntegrationRule;
-        let llm_response = r#"{"is_integration": true, "confidence": "high", "evidence": []}"#;
-        let result = rule.evaluate("content", llm_response);
+        let result = rule.evaluate("content", &[]);
         assert!(
             result.is_none(),
             "should return None when no actual evidence is listed"
-        );
-    }
-
-    #[test]
-    fn handles_markdown_fenced_json_response() {
-        let rule = ProcessNotIntegrationRule;
-        let llm_response = "```json\n{\"is_integration\": true, \"confidence\": \"high\", \"evidence\": [{\"text\": \"--verbose flag enables detailed output\", \"reason\": \"CLI flag reference\"}]}\n```";
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_some(),
-            "should parse JSON from within markdown fences"
-        );
-        let violation = result.unwrap();
-        assert!(
-            violation
-                .message
-                .contains("--verbose flag enables detailed output"),
-            "should parse JSON from within markdown fences, got: {}",
-            violation.message
-        );
-    }
-
-    #[test]
-    fn handles_bare_backtick_fenced_response() {
-        let rule = ProcessNotIntegrationRule;
-        let llm_response =
-            "```\n{\"is_integration\": false, \"confidence\": \"high\", \"evidence\": []}\n```";
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_none(),
-            "should parse JSON from bare backtick fences"
         );
     }
 }

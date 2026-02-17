@@ -2,10 +2,13 @@ use serde_json::json;
 use std::fmt;
 use std::time::Duration;
 
+use crate::rules::llm_rules::LlmResponse;
+
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const MODEL: &str = "claude-opus-4-5-20251101";
 const MAX_TOKENS: u32 = 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+const TOOL_NAME: &str = "report_lint_violations";
 
 #[derive(Debug)]
 pub enum LlmError {
@@ -27,7 +30,7 @@ pub trait LlmAnalyzer: Send + Sync {
         &self,
         system_prompt: &str,
         user_content: &str,
-    ) -> impl std::future::Future<Output = Result<String, LlmError>> + Send;
+    ) -> impl std::future::Future<Output = Result<LlmResponse, LlmError>> + Send;
 }
 
 pub struct AnthropicClient {
@@ -45,21 +48,26 @@ impl AnthropicClient {
     }
 }
 
-fn extract_text_from_response(body: &serde_json::Value) -> Result<String, LlmError> {
-    body["content"]
-        .get(0)
-        .and_then(|block| block["text"].as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| {
-            LlmError::ParseError(format!(
-                "No text content in API response: {}",
-                serde_json::to_string(body).unwrap_or_default()
-            ))
-        })
+fn extract_tool_input_from_response(body: &serde_json::Value) -> Result<LlmResponse, LlmError> {
+    let content = body["content"]
+        .as_array()
+        .ok_or_else(|| LlmError::ParseError("missing content array in API response".into()))?;
+
+    let tool_block = content
+        .iter()
+        .find(|block| block["type"].as_str() == Some("tool_use"))
+        .ok_or_else(|| LlmError::ParseError("no tool_use block in API response".into()))?;
+
+    serde_json::from_value(tool_block["input"].clone())
+        .map_err(|e| LlmError::ParseError(format!("failed to parse tool input: {e}")))
 }
 
 impl LlmAnalyzer for AnthropicClient {
-    async fn analyze(&self, system_prompt: &str, user_content: &str) -> Result<String, LlmError> {
+    async fn analyze(
+        &self,
+        system_prompt: &str,
+        user_content: &str,
+    ) -> Result<LlmResponse, LlmError> {
         let body = json!({
             "model": MODEL,
             "max_tokens": MAX_TOKENS,
@@ -69,7 +77,30 @@ impl LlmAnalyzer for AnthropicClient {
                     "role": "user",
                     "content": user_content
                 }
-            ]
+            ],
+            "tools": [{
+                "name": TOOL_NAME,
+                "description": "Report lint violations found in the file",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "has_violations": { "type": "boolean" },
+                        "violations": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "The offending text" },
+                                    "reason": { "type": "string", "description": "Why this is a violation" }
+                                },
+                                "required": ["text", "reason"]
+                            }
+                        }
+                    },
+                    "required": ["has_violations", "violations"]
+                }
+            }],
+            "tool_choice": { "type": "tool", "name": TOOL_NAME }
         });
 
         let response = self
@@ -96,7 +127,7 @@ impl LlmAnalyzer for AnthropicClient {
             .await
             .map_err(|e| LlmError::ParseError(e.to_string()))?;
 
-        extract_text_from_response(&response_body)
+        extract_tool_input_from_response(&response_body)
     }
 }
 
@@ -106,7 +137,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn builds_correct_request_body() {
+    fn request_body_includes_tools_and_tool_choice() {
         let system_prompt = "You are a linter.";
         let user_content = "Check this file content.";
 
@@ -114,59 +145,160 @@ mod tests {
             "model": MODEL,
             "max_tokens": MAX_TOKENS,
             "system": system_prompt,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": user_content
+            "messages": [{"role": "user", "content": user_content}],
+            "tools": [{
+                "name": TOOL_NAME,
+                "description": "Report lint violations found in the file",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "has_violations": { "type": "boolean" },
+                        "violations": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "The offending text" },
+                                    "reason": { "type": "string", "description": "Why this is a violation" }
+                                },
+                                "required": ["text", "reason"]
+                            }
+                        }
+                    },
+                    "required": ["has_violations", "violations"]
                 }
-            ]
+            }],
+            "tool_choice": { "type": "tool", "name": TOOL_NAME }
         });
 
         assert_eq!(body["model"], "claude-opus-4-5-20251101");
-        assert_eq!(body["max_tokens"], 1024);
-        assert_eq!(body["system"], system_prompt);
-        assert_eq!(body["messages"][0]["role"], "user");
-        assert_eq!(body["messages"][0]["content"], user_content);
+        assert_eq!(body["tools"][0]["name"], "report_lint_violations");
+        assert_eq!(body["tool_choice"]["type"], "tool");
+        assert_eq!(body["tool_choice"]["name"], "report_lint_violations");
     }
 
     #[test]
-    fn parses_successful_api_response() {
-        let response_body: serde_json::Value = serde_json::from_str(
-            r#"{
-                "id": "msg_123",
-                "type": "message",
-                "role": "assistant",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "{\"has_violations\": false, \"explanations\": []}"
+    fn extracts_violations_from_tool_use_response() {
+        let response_body = json!({
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_abc",
+                    "name": "report_lint_violations",
+                    "input": {
+                        "has_violations": true,
+                        "violations": [
+                            {"text": "some bad text", "reason": "it is bad"}
+                        ]
                     }
-                ],
-                "model": "claude-opus-4-5-20251101",
-                "stop_reason": "end_turn",
-                "usage": {"input_tokens": 100, "output_tokens": 50}
-            }"#,
-        )
-        .unwrap();
+                }
+            ],
+            "model": "claude-opus-4-5-20251101",
+            "stop_reason": "tool_use"
+        });
 
-        let text = extract_text_from_response(&response_body).unwrap();
-        assert_eq!(text, r#"{"has_violations": false, "explanations": []}"#);
+        let result = extract_tool_input_from_response(&response_body).unwrap();
+        assert!(result.has_violations);
+        assert_eq!(result.violations.len(), 1);
+        assert_eq!(result.violations[0].text, "some bad text");
+        assert_eq!(result.violations[0].reason, "it is bad");
+    }
+
+    #[test]
+    fn extracts_no_violations_from_tool_use_response() {
+        let response_body = json!({
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_abc",
+                    "name": "report_lint_violations",
+                    "input": {
+                        "has_violations": false,
+                        "violations": []
+                    }
+                }
+            ],
+            "stop_reason": "tool_use"
+        });
+
+        let result = extract_tool_input_from_response(&response_body).unwrap();
+        assert!(!result.has_violations);
+        assert!(result.violations.is_empty());
+    }
+
+    #[test]
+    fn returns_error_for_missing_tool_use_block() {
+        let response_body = json!({
+            "content": [
+                {"type": "text", "text": "some text response"}
+            ]
+        });
+
+        let result = extract_tool_input_from_response(&response_body);
+        assert!(result.is_err());
     }
 
     #[test]
     fn returns_error_for_empty_content_array() {
-        let response_body: serde_json::Value = serde_json::from_str(r#"{"content": []}"#).unwrap();
+        let response_body = json!({"content": []});
 
-        let result = extract_text_from_response(&response_body);
+        let result = extract_tool_input_from_response(&response_body);
         assert!(result.is_err());
     }
 
     #[test]
     fn returns_error_for_missing_content_field() {
-        let response_body: serde_json::Value =
-            serde_json::from_str(r#"{"id": "msg_123", "type": "error"}"#).unwrap();
+        let response_body = json!({"id": "msg_123", "type": "error"});
 
-        let result = extract_text_from_response(&response_body);
+        let result = extract_tool_input_from_response(&response_body);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn returns_error_for_malformed_tool_input() {
+        let response_body = json!({
+            "content": [{
+                "type": "tool_use",
+                "id": "toolu_abc",
+                "name": "report_lint_violations",
+                "input": {
+                    "has_violations": "not_a_bool",
+                    "violations": []
+                }
+            }]
+        });
+
+        let result = extract_tool_input_from_response(&response_body);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn extracts_tool_use_when_mixed_with_text_blocks() {
+        let response_body = json!({
+            "content": [
+                {"type": "text", "text": "I'll check..."},
+                {
+                    "type": "tool_use",
+                    "id": "toolu_abc",
+                    "name": "report_lint_violations",
+                    "input": {
+                        "has_violations": true,
+                        "violations": [
+                            {"text": "offending", "reason": "why"}
+                        ]
+                    }
+                }
+            ]
+        });
+
+        let result = extract_tool_input_from_response(&response_body).unwrap();
+        assert!(result.has_violations);
+        assert_eq!(result.violations.len(), 1);
     }
 }

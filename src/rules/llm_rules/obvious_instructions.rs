@@ -1,7 +1,5 @@
-use serde::Deserialize;
-
 use crate::diagnostic::RuleViolation;
-use crate::rules::llm_rules::{LlmRule, strip_markdown_fences};
+use crate::rules::llm_rules::{LlmRule, LlmViolation};
 
 const SYSTEM_PROMPT: &str = r#"Find instructions in the provided SKILL.md file that are so generic and obvious that any LLM would already follow them without being told. These are instructions that waste tokens by stating things the LLM already knows to do.
 
@@ -44,24 +42,7 @@ These are valuable because they are specific, project-contextual, or override de
 
 The key distinction: if the instruction could appear in ANY project's guidelines and adds nothing project-specific, it is obvious. If it constrains behavior in a specific, non-default way, it is valuable.
 
-Respond ONLY with a JSON object in this exact format:
-{"has_violations": true/false, "instructions": [{"text": "the exact offending instruction", "reason": "why this is obvious"}]}
-
-If there are no violations, respond with:
-{"has_violations": false, "instructions": []}"#;
-
-#[derive(Deserialize)]
-struct LlmResponse {
-    has_violations: bool,
-    instructions: Vec<Instruction>,
-}
-
-#[derive(Deserialize)]
-struct Instruction {
-    text: String,
-    #[allow(dead_code)]
-    reason: String,
-}
+For each violation found, report the obvious instruction as "text" and explain why it is obvious as "reason"."#;
 
 pub struct ObviousInstructionsRule;
 
@@ -78,20 +59,14 @@ impl LlmRule for ObviousInstructionsRule {
         SYSTEM_PROMPT
     }
 
-    fn evaluate(&self, _input: &str, llm_response: &str) -> Option<RuleViolation> {
-        let json_str = strip_markdown_fences(llm_response);
-        let parsed: LlmResponse = serde_json::from_str(json_str).ok()?;
-
-        if !parsed.has_violations || parsed.instructions.is_empty() {
+    fn evaluate(&self, _input: &str, violations: &[LlmViolation]) -> Option<RuleViolation> {
+        if violations.is_empty() {
             return None;
         }
-
-        let details: Vec<String> = parsed
-            .instructions
+        let details: Vec<String> = violations
             .iter()
             .map(|i| format!("\"{}\"", i.text))
             .collect();
-
         Some(RuleViolation {
             message: format!(
                 "File contains obvious instructions any LLM would already follow: {}",
@@ -106,6 +81,7 @@ impl LlmRule for ObviousInstructionsRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rules::llm_rules::LlmViolation;
 
     #[test]
     fn has_correct_name() {
@@ -126,40 +102,26 @@ mod tests {
     }
 
     #[test]
-    fn system_prompt_asks_for_json_response() {
-        let rule = ObviousInstructionsRule;
-        let prompt = rule.system_prompt();
-        assert!(
-            prompt.contains("has_violations") && prompt.contains("instructions"),
-            "system prompt should request JSON with has_violations and instructions fields"
-        );
-    }
-
-    #[test]
     fn returns_none_when_no_violations() {
         let rule = ObviousInstructionsRule;
-        let llm_response = r#"{"has_violations": false, "instructions": []}"#;
-        let result = rule.evaluate("some skill content", llm_response);
+        let result = rule.evaluate("some skill content", &[]);
         assert!(result.is_none());
     }
 
     #[test]
     fn returns_violation_when_obvious_instructions_found() {
         let rule = ObviousInstructionsRule;
-        let llm_response = r#"{
-            "has_violations": true,
-            "instructions": [
-                {
-                    "text": "read code changes carefully",
-                    "reason": "Any LLM will already read input carefully"
-                },
-                {
-                    "text": "keep code modular where possible",
-                    "reason": "Basic software practice any LLM knows"
-                }
-            ]
-        }"#;
-        let result = rule.evaluate("content with obvious instructions", llm_response);
+        let violations = &[
+            LlmViolation {
+                text: "read code changes carefully".into(),
+                reason: "Any LLM will already read input carefully".into(),
+            },
+            LlmViolation {
+                text: "keep code modular where possible".into(),
+                reason: "Basic software practice any LLM knows".into(),
+            },
+        ];
+        let result = rule.evaluate("content with obvious instructions", violations);
         assert!(result.is_some());
         let violation = result.unwrap();
         assert!(
@@ -179,36 +141,10 @@ mod tests {
     #[test]
     fn returns_none_for_empty_instructions_even_if_flagged() {
         let rule = ObviousInstructionsRule;
-        let llm_response = r#"{"has_violations": true, "instructions": []}"#;
-        let result = rule.evaluate("content", llm_response);
+        let result = rule.evaluate("content", &[]);
         assert!(
             result.is_none(),
             "should return None when no actual instructions are listed"
-        );
-    }
-
-    #[test]
-    fn handles_markdown_fenced_json() {
-        let rule = ObviousInstructionsRule;
-        let llm_response = "```json\n{\"has_violations\": true, \"instructions\": [{\"text\": \"follow best practices\", \"reason\": \"obvious\"}]}\n```";
-        let result = rule.evaluate("content", llm_response);
-        assert!(result.is_some());
-        let violation = result.unwrap();
-        assert!(
-            violation.message.contains("follow best practices"),
-            "should parse JSON from within markdown fences, got: {}",
-            violation.message
-        );
-    }
-
-    #[test]
-    fn returns_none_for_malformed_json() {
-        let rule = ObviousInstructionsRule;
-        let llm_response = "this is not json at all";
-        let result = rule.evaluate("content", llm_response);
-        assert!(
-            result.is_none(),
-            "should return None for unparseable LLM response rather than panicking"
         );
     }
 }

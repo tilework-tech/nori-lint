@@ -105,7 +105,10 @@ pub(crate) async fn run_llm_rules<A: LlmAnalyzer>(
     for (rule, result) in results {
         match result {
             Ok(response) => {
-                if let Some(violation) = rule.evaluate(content, &response) {
+                if response.has_violations
+                    && !response.violations.is_empty()
+                    && let Some(violation) = rule.evaluate(content, &response.violations)
+                {
                     diagnostics.push(LintDiagnostic::from_violation(
                         &violation,
                         rule.name(),
@@ -271,12 +274,12 @@ mod tests {
     use crate::diagnostic::RuleViolation;
     use crate::llm_client::{LlmAnalyzer, LlmError};
     use crate::llm_registry::LlmRegistry;
-    use crate::rules::llm_rules::LlmRule;
+    use crate::rules::llm_rules::{LlmResponse, LlmRule, LlmViolation};
     use std::time::Duration;
 
     struct DelayMockAnalyzer {
         delay: Duration,
-        response: Result<String, String>,
+        response: Result<LlmResponse, String>,
     }
 
     impl LlmAnalyzer for DelayMockAnalyzer {
@@ -284,7 +287,7 @@ mod tests {
             &self,
             _system_prompt: &str,
             _user_content: &str,
-        ) -> Result<String, LlmError> {
+        ) -> Result<LlmResponse, LlmError> {
             tokio::time::sleep(self.delay).await;
             self.response
                 .clone()
@@ -306,7 +309,7 @@ mod tests {
         fn system_prompt(&self) -> &str {
             "mock prompt"
         }
-        fn evaluate(&self, _input: &str, _llm_response: &str) -> Option<RuleViolation> {
+        fn evaluate(&self, _input: &str, _violations: &[LlmViolation]) -> Option<RuleViolation> {
             Some(RuleViolation {
                 message: format!("violation from {}", self.rule_name),
                 line: None,
@@ -326,7 +329,13 @@ mod tests {
     async fn collects_diagnostics_from_all_rules() {
         let client = DelayMockAnalyzer {
             delay: Duration::from_millis(10),
-            response: Ok("{}".to_string()),
+            response: Ok(LlmResponse {
+                has_violations: true,
+                violations: vec![LlmViolation {
+                    text: "bad".into(),
+                    reason: "why".into(),
+                }],
+            }),
         };
         let mut registry = LlmRegistry::new();
         registry.register(Box::new(AlwaysViolatesRule {
@@ -413,7 +422,13 @@ mod tests {
     async fn disabled_rules_are_skipped() {
         let client = DelayMockAnalyzer {
             delay: Duration::from_millis(10),
-            response: Ok("{}".to_string()),
+            response: Ok(LlmResponse {
+                has_violations: true,
+                violations: vec![LlmViolation {
+                    text: "bad".into(),
+                    reason: "why".into(),
+                }],
+            }),
         };
         let mut registry = LlmRegistry::new();
         registry.register(Box::new(AlwaysViolatesRule {
