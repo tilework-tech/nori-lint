@@ -19,7 +19,7 @@ Path: @/tests
 - `cli.test.ts` uses `fs.mkdtempSync()` to create isolated filesystem environments, writes SKILL.md files with known content, then calls `run()` with stubbed `process.argv`
 - A `withArgs()` helper stubs `process.argv`, captures stdout/stderr, and returns `{ code, stdout, stderr }`
 - Helper functions create SKILL.md fixtures targeting specific rule behaviors
-- Tests are organized into groups covering: basic behavior, directory argument handling, `--format text` output, `--format json` output, `--help`, per-rule violation detection, `--config` behavior, rules config enable/disable, `.nori-lint.json` auto-discovery, and unknown rule warnings
+- Tests are organized into groups covering: default behavior (no subcommand shows help), lint subcommand basic behavior, directory argument handling, `--format text` output, `--format json` output, `--help`, per-rule violation detection, `--config` behavior, rules config enable/disable, `.nori-lint.json` auto-discovery, and unknown rule warnings
 
 ### Things to Know
 
