@@ -81,10 +81,25 @@ afterEach(() => {
 });
 
 describe("CLI integration tests", () => {
-  describe("basic behavior", () => {
+  describe("default behavior (no subcommand)", () => {
+    test("shows help and exits success when no arguments given", async () => {
+      const { code, stdout } = await withArgs([]);
+      expect(code).toBe(0);
+      expect(stdout).toContain("Usage");
+      expect(stdout).toContain("nori-lint");
+    });
+
+    test("--help shows help with lint subcommand listed", async () => {
+      const { code, stdout } = await withArgs(["--help"]);
+      expect(code).toBe(0);
+      expect(stdout).toContain("lint");
+    });
+  });
+
+  describe("lint subcommand - basic behavior", () => {
     test("exits success when no skill files found", async () => {
       const dir = createTempDir();
-      const { code } = await withArgs([dir]);
+      const { code } = await withArgs(["lint", dir]);
       expect(code).toBe(0);
     });
 
@@ -94,7 +109,7 @@ describe("CLI integration tests", () => {
       fs.mkdirSync(skillDir);
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), smallSkillContent());
 
-      const { code } = await withArgs([dir]);
+      const { code } = await withArgs(["lint", dir]);
       expect(code).toBe(0);
     });
 
@@ -104,7 +119,7 @@ describe("CLI integration tests", () => {
       fs.mkdirSync(skillDir);
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), largeSkillContent());
 
-      const { code } = await withArgs([dir]);
+      const { code } = await withArgs(["lint", dir]);
       expect(code).toBe(1);
     });
 
@@ -119,7 +134,12 @@ describe("CLI integration tests", () => {
       fs.mkdirSync(badDir);
       fs.writeFileSync(path.join(badDir, "SKILL.md"), largeSkillContent());
 
-      const { code, stdout } = await withArgs(["--format", "json", dir]);
+      const { code, stdout } = await withArgs([
+        "lint",
+        "--format",
+        "json",
+        dir,
+      ]);
       expect(code).toBe(1);
 
       const diagnostics = JSON.parse(stdout) as Array<{ file: string }>;
@@ -134,19 +154,19 @@ describe("CLI integration tests", () => {
       fs.mkdirSync(nested, { recursive: true });
       fs.writeFileSync(path.join(nested, "SKILL.md"), largeSkillContent());
 
-      const { code } = await withArgs([dir]);
+      const { code } = await withArgs(["lint", dir]);
       expect(code).toBe(1);
     });
   });
 
-  describe("directory path argument", () => {
+  describe("lint subcommand - directory path argument", () => {
     test("accepts directory path argument", async () => {
       const dir = createTempDir();
       const skillDir = path.join(dir, "my-skill");
       fs.mkdirSync(skillDir);
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), smallSkillContent());
 
-      const { code } = await withArgs([dir]);
+      const { code } = await withArgs(["lint", dir]);
       expect(code).toBe(0);
     });
 
@@ -156,12 +176,15 @@ describe("CLI integration tests", () => {
       fs.mkdirSync(skillDir);
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), largeSkillContent());
 
-      const { code } = await withArgs([dir]);
+      const { code } = await withArgs(["lint", dir]);
       expect(code).toBe(1);
     });
 
     test("reports error for nonexistent directory", async () => {
-      const { code, stderr } = await withArgs(["/tmp/nonexistent-dir-xyz-123"]);
+      const { code, stderr } = await withArgs([
+        "lint",
+        "/tmp/nonexistent-dir-xyz-123",
+      ]);
       expect(code).toBe(1);
       expect(stderr).toContain("does not exist");
     });
@@ -171,33 +194,43 @@ describe("CLI integration tests", () => {
       const filePath = path.join(dir, "somefile.txt");
       fs.writeFileSync(filePath, "hello");
 
-      const { code, stderr } = await withArgs([filePath]);
+      const { code, stderr } = await withArgs(["lint", filePath]);
       expect(code).toBe(1);
       expect(stderr).toContain("is not a directory");
     });
   });
 
-  describe("--format text", () => {
+  describe("lint subcommand - --format text", () => {
     test("format text produces output with rule name in brackets", async () => {
       const dir = createTempDir();
       const skillDir = path.join(dir, "my-skill");
       fs.mkdirSync(skillDir);
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), largeSkillContent());
 
-      const { code, stdout } = await withArgs(["--format", "text", dir]);
+      const { code, stdout } = await withArgs([
+        "lint",
+        "--format",
+        "text",
+        dir,
+      ]);
       expect(code).toBe(1);
       expect(stdout).toContain("[line_count]");
     });
   });
 
-  describe("--format json", () => {
+  describe("lint subcommand - --format json", () => {
     test("format json outputs valid JSON with violation", async () => {
       const dir = createTempDir();
       const skillDir = path.join(dir, "my-skill");
       fs.mkdirSync(skillDir);
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), largeSkillContent());
 
-      const { code, stdout } = await withArgs(["--format", "json", dir]);
+      const { code, stdout } = await withArgs([
+        "lint",
+        "--format",
+        "json",
+        dir,
+      ]);
       expect(code).toBe(1);
 
       const diagnostics = JSON.parse(stdout) as Array<{ rule: string }>;
@@ -211,7 +244,7 @@ describe("CLI integration tests", () => {
       fs.mkdirSync(skillDir);
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), smallSkillContent());
 
-      const { stdout } = await withArgs(["--format", "json", dir]);
+      const { stdout } = await withArgs(["lint", "--format", "json", dir]);
       const diagnostics = JSON.parse(stdout) as Array<unknown>;
       expect(diagnostics).toEqual([]);
     });
@@ -230,7 +263,7 @@ describe("CLI integration tests", () => {
         skillWithoutRequiredTags(),
       );
 
-      const { stdout } = await withArgs(["--format", "json", dir]);
+      const { stdout } = await withArgs(["lint", "--format", "json", dir]);
       const diagnostics = JSON.parse(stdout) as Array<{
         rule: string;
         file: string;
@@ -243,22 +276,22 @@ describe("CLI integration tests", () => {
 
     test("format invalid value prints error", async () => {
       const dir = createTempDir();
-      const { code, stderr } = await withArgs(["--format", "xml", dir]);
+      const { code, stderr } = await withArgs(["lint", "--format", "xml", dir]);
       expect(code).toBe(1);
       expect(stderr.toLowerCase()).toContain("format");
     });
   });
 
-  describe("--help", () => {
+  describe("lint subcommand - --help", () => {
     test("help flag prints usage and exits success", async () => {
-      const { code, stdout } = await withArgs(["--help"]);
+      const { code, stdout } = await withArgs(["lint", "--help"]);
       expect(code).toBe(0);
       expect(stdout).toContain("Usage");
       expect(stdout).toContain("nori-lint");
     });
   });
 
-  describe("required_tags rule", () => {
+  describe("lint subcommand - required_tags rule", () => {
     test("exits failure for skill file missing required tags", async () => {
       const dir = createTempDir();
       const skillDir = path.join(dir, "my-skill");
@@ -268,7 +301,7 @@ describe("CLI integration tests", () => {
         skillWithoutRequiredTags(),
       );
 
-      const { code } = await withArgs([dir]);
+      const { code } = await withArgs(["lint", dir]);
       expect(code).toBe(1);
     });
 
@@ -281,32 +314,32 @@ describe("CLI integration tests", () => {
         skillWithoutRequiredTags(),
       );
 
-      const { stdout } = await withArgs(["--format", "json", dir]);
+      const { stdout } = await withArgs(["lint", "--format", "json", dir]);
       const diagnostics = JSON.parse(stdout) as Array<{ rule: string }>;
       expect(diagnostics.some((d) => d.rule === "required_tags")).toBe(true);
     });
   });
 
-  describe("unclosed_tags rule", () => {
+  describe("lint subcommand - unclosed_tags rule", () => {
     test("exits failure for skill file with unclosed tag", async () => {
       const dir = createTempDir();
       const skillDir = path.join(dir, "my-skill");
       fs.mkdirSync(skillDir);
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), skillWithUnclosedTag());
 
-      const { code } = await withArgs([dir]);
+      const { code } = await withArgs(["lint", dir]);
       expect(code).toBe(1);
     });
   });
 
-  describe("--config", () => {
+  describe("lint subcommand - --config", () => {
     test("without config, deterministic rules still run", async () => {
       const dir = createTempDir();
       const skillDir = path.join(dir, "my-skill");
       fs.mkdirSync(skillDir);
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), largeSkillContent());
 
-      const { code, stderr } = await withArgs([dir]);
+      const { code, stderr } = await withArgs(["lint", dir]);
       expect(code).toBe(1);
       expect(stderr.toLowerCase()).toContain("skipping llm rules");
     });
@@ -314,6 +347,7 @@ describe("CLI integration tests", () => {
     test("config flag with nonexistent file prints error", async () => {
       const dir = createTempDir();
       const { code, stderr } = await withArgs([
+        "lint",
         "--config",
         "/tmp/nonexistent-config-xyz.json",
         dir,
@@ -327,7 +361,12 @@ describe("CLI integration tests", () => {
       const configPath = path.join(dir, "bad-config.json");
       fs.writeFileSync(configPath, "not valid json {{{");
 
-      const { code, stderr } = await withArgs(["--config", configPath, dir]);
+      const { code, stderr } = await withArgs([
+        "lint",
+        "--config",
+        configPath,
+        dir,
+      ]);
       expect(code).toBe(1);
       expect(stderr.length).toBeGreaterThan(0);
     });
@@ -337,13 +376,18 @@ describe("CLI integration tests", () => {
       const configPath = path.join(dir, "config.json");
       fs.writeFileSync(configPath, JSON.stringify({ rules: {} }));
 
-      const { code, stderr } = await withArgs(["--config", configPath, dir]);
+      const { code, stderr } = await withArgs([
+        "lint",
+        "--config",
+        configPath,
+        dir,
+      ]);
       expect(code).toBe(1);
       expect(stderr.toLowerCase()).toContain("anthropic_api_key");
     });
   });
 
-  describe("redundant_title rule", () => {
+  describe("lint subcommand - redundant_title rule", () => {
     test("exits failure for skill file with redundant title heading", async () => {
       const dir = createTempDir();
       const skillDir = path.join(dir, "my-skill");
@@ -353,12 +397,12 @@ describe("CLI integration tests", () => {
         skillWithRedundantTitle(),
       );
 
-      const { code } = await withArgs([dir]);
+      const { code } = await withArgs(["lint", dir]);
       expect(code).toBe(1);
     });
   });
 
-  describe("rules config (enable/disable)", () => {
+  describe("lint subcommand - rules config (enable/disable)", () => {
     test("disabled rule does not produce diagnostics", async () => {
       const dir = createTempDir();
       const configPath = path.join(dir, "config.json");
@@ -372,6 +416,7 @@ describe("CLI integration tests", () => {
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), skillWithBoldText());
 
       const { stdout } = await withArgs([
+        "lint",
         "--config",
         configPath,
         "--format",
@@ -398,6 +443,7 @@ describe("CLI integration tests", () => {
       );
 
       const { stdout } = await withArgs([
+        "lint",
         "--config",
         configPath,
         "--format",
@@ -418,12 +464,12 @@ describe("CLI integration tests", () => {
 
       const skillDir = path.join(dir, "my-skill");
       fs.mkdirSync(skillDir);
-      // This file has bold text AND missing required tags
       const content =
         "---\nname: Test Skill\ndescription: A test skill\n---\n\nSome **bold** content without required tags.\n";
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), content);
 
       const { stdout } = await withArgs([
+        "lint",
         "--config",
         configPath,
         "--format",
@@ -450,20 +496,25 @@ describe("CLI integration tests", () => {
       fs.mkdirSync(skillDir);
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), smallSkillContent());
 
-      const { code, stderr } = await withArgs(["--config", configPath, dir]);
+      const { code, stderr } = await withArgs([
+        "lint",
+        "--config",
+        configPath,
+        dir,
+      ]);
       expect(code).toBe(1);
       expect(stderr.length).toBeGreaterThan(0);
     });
   });
 
-  describe("bold_italics rule", () => {
+  describe("lint subcommand - bold_italics rule", () => {
     test("exits failure for skill file with bold text", async () => {
       const dir = createTempDir();
       const skillDir = path.join(dir, "my-skill");
       fs.mkdirSync(skillDir);
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), skillWithBoldText());
 
-      const { code } = await withArgs([dir]);
+      const { code } = await withArgs(["lint", dir]);
       expect(code).toBe(1);
     });
 
@@ -473,7 +524,7 @@ describe("CLI integration tests", () => {
       fs.mkdirSync(skillDir);
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), skillWithBoldText());
 
-      const { stdout } = await withArgs(["--format", "json", dir]);
+      const { stdout } = await withArgs(["lint", "--format", "json", dir]);
       const diagnostics = JSON.parse(stdout) as Array<{
         rule: string;
         line: number | null;
@@ -484,7 +535,7 @@ describe("CLI integration tests", () => {
     });
   });
 
-  describe("markdown_links rule", () => {
+  describe("lint subcommand - markdown_links rule", () => {
     test("exits failure for skill file with markdown link syntax", async () => {
       const dir = createTempDir();
       const skillDir = path.join(dir, "my-skill");
@@ -494,12 +545,12 @@ describe("CLI integration tests", () => {
         skillWithMarkdownLink(),
       );
 
-      const { code } = await withArgs([dir]);
+      const { code } = await withArgs(["lint", dir]);
       expect(code).toBe(1);
     });
   });
 
-  describe(".nori-lint.json auto-discovery", () => {
+  describe("lint subcommand - .nori-lint.json auto-discovery", () => {
     test(".nori-lint.json in cwd is auto-discovered", async () => {
       const dir = createTempDir();
       const skillDir = path.join(dir, "my-skill");
@@ -512,7 +563,7 @@ describe("CLI integration tests", () => {
       const originalCwd = process.cwd();
       try {
         process.chdir(dir);
-        const { code, stderr } = await withArgs([dir]);
+        const { code, stderr } = await withArgs(["lint", dir]);
         expect(code).toBe(1);
         expect(stderr.length).toBeGreaterThan(0);
       } finally {
@@ -521,7 +572,7 @@ describe("CLI integration tests", () => {
     });
   });
 
-  describe("unknown rule warnings", () => {
+  describe("lint subcommand - unknown rule warnings", () => {
     test("unknown rule in disabled list emits warning on stderr", async () => {
       const dir = createTempDir();
       const configPath = path.join(dir, "config.json");
@@ -534,7 +585,7 @@ describe("CLI integration tests", () => {
       fs.mkdirSync(skillDir);
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), smallSkillContent());
 
-      const { stderr } = await withArgs(["--config", configPath, dir]);
+      const { stderr } = await withArgs(["lint", "--config", configPath, dir]);
       expect(stderr).toContain("nonexistent_rule");
     });
 
@@ -550,7 +601,7 @@ describe("CLI integration tests", () => {
       fs.mkdirSync(skillDir);
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), smallSkillContent());
 
-      const { stderr } = await withArgs(["--config", configPath, dir]);
+      const { stderr } = await withArgs(["lint", "--config", configPath, dir]);
       expect(stderr).toContain("nonexistent_rule");
     });
   });

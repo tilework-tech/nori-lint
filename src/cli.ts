@@ -138,152 +138,180 @@ async function runLlmRules(
 
 export const run = async (): Promise<number> => {
   const program = new Command();
+  let exitCode = 0;
 
   program
     .name("nori-lint")
     .description("Lint SKILL.md files for common issues")
-    .argument("[path]", "Directory to lint", ".")
-    .option("--format <format>", "Output format (text or json)", "text")
-    .option("--config <path>", "Path to config file")
     .configureOutput({
       writeOut: (str) => process.stdout.write(str),
       writeErr: (str) => process.stderr.write(str),
     })
     .exitOverride();
 
-  let parsedPath: string;
-  let format: string;
-  let configPath: string | undefined;
+  program
+    .command("lint")
+    .description("Lint SKILL.md files for common issues")
+    .argument("[path]", "Directory to lint", ".")
+    .option("--format <format>", "Output format (text or json)", "text")
+    .option("--config <path>", "Path to config file")
+    .action(
+      async (parsedPath: string, opts: { format: string; config?: string }) => {
+        const format = opts.format;
+        const configPath = opts.config;
 
-  try {
-    program.parse(process.argv);
-    parsedPath = program.args[0] ?? ".";
-    const opts = program.opts<{ format: string; config?: string }>();
-    format = opts.format;
-    configPath = opts.config;
-  } catch {
-    return program.args.includes("--help") ? 0 : 1;
-  }
-
-  if (format !== "text" && format !== "json") {
-    process.stderr.write(
-      `error: invalid format '${format}'. Must be 'text' or 'json'\n`,
-    );
-    return 1;
-  }
-
-  let config: Config | null;
-  try {
-    config = resolveConfig(configPath);
-  } catch (e) {
-    process.stderr.write(`error: ${e instanceof Error ? e.message : e}\n`);
-    return 1;
-  }
-
-  const rootPath = parsedPath;
-
-  if (!fs.existsSync(rootPath)) {
-    process.stderr.write(`error: ${rootPath} does not exist\n`);
-    return 1;
-  }
-
-  const stat = fs.statSync(rootPath);
-  if (!stat.isDirectory()) {
-    process.stderr.write(`error: ${rootPath} is not a directory\n`);
-    return 1;
-  }
-
-  const registry = defaultRegistry();
-
-  if (!config) {
-    process.stderr.write(
-      "note: skipping LLM rules (no .nori-lint.json found; use --config to specify)\n",
-    );
-  }
-
-  const llmClient = config
-    ? new AnthropicClient(config.anthropic_api_key)
-    : null;
-  const llmRegistry = config ? defaultLlmRegistry() : new LlmRegistry();
-
-  if (config) {
-    const allKnownRules = [
-      ...registry.rules.map((r) => r.name),
-      ...llmRegistry.rules.map((r) => r.name),
-    ];
-
-    if (config.rules) {
-      const namesToCheck = config.rules.enabled ?? config.rules.disabled ?? [];
-      for (const name of namesToCheck) {
-        if (!allKnownRules.includes(name)) {
-          process.stderr.write(`warning: unknown rule '${name}' in config\n`);
+        if (format !== "text" && format !== "json") {
+          process.stderr.write(
+            `error: invalid format '${format}'. Must be 'text' or 'json'\n`,
+          );
+          exitCode = 1;
+          return;
         }
-      }
+
+        let config: Config | null;
+        try {
+          config = resolveConfig(configPath);
+        } catch (e) {
+          process.stderr.write(
+            `error: ${e instanceof Error ? e.message : e}\n`,
+          );
+          exitCode = 1;
+          return;
+        }
+
+        const rootPath = parsedPath;
+
+        if (!fs.existsSync(rootPath)) {
+          process.stderr.write(`error: ${rootPath} does not exist\n`);
+          exitCode = 1;
+          return;
+        }
+
+        const stat = fs.statSync(rootPath);
+        if (!stat.isDirectory()) {
+          process.stderr.write(`error: ${rootPath} is not a directory\n`);
+          exitCode = 1;
+          return;
+        }
+
+        const registry = defaultRegistry();
+
+        if (!config) {
+          process.stderr.write(
+            "note: skipping LLM rules (no .nori-lint.json found; use --config to specify)\n",
+          );
+        }
+
+        const llmClient = config
+          ? new AnthropicClient(config.anthropic_api_key)
+          : null;
+        const llmRegistry = config ? defaultLlmRegistry() : new LlmRegistry();
+
+        if (config) {
+          const allKnownRules = [
+            ...registry.rules.map((r) => r.name),
+            ...llmRegistry.rules.map((r) => r.name),
+          ];
+
+          if (config.rules) {
+            const namesToCheck =
+              config.rules.enabled ?? config.rules.disabled ?? [];
+            for (const name of namesToCheck) {
+              if (!allKnownRules.includes(name)) {
+                process.stderr.write(
+                  `warning: unknown rule '${name}' in config\n`,
+                );
+              }
+            }
+          }
+        }
+
+        const diagnostics: Array<LintDiagnostic> = [];
+        let hasReadError = false;
+        const hasLlmError = { value: false };
+
+        const skillFiles = globSync("**/SKILL.md", { cwd: rootPath });
+
+        for (const relPath of skillFiles) {
+          const fullPath = path.join(rootPath, relPath);
+          const displayPath = relPath;
+
+          let content: string;
+          try {
+            content = fs.readFileSync(fullPath, "utf-8");
+          } catch (e) {
+            process.stderr.write(
+              `error: could not read ${displayPath}: ${e instanceof Error ? e.message : e}\n`,
+            );
+            hasReadError = true;
+            continue;
+          }
+
+          for (const rule of registry.rules) {
+            if (config && !isRuleEnabled(config, rule.name)) continue;
+            for (const violation of rule.run(content)) {
+              diagnostics.push(
+                fromViolation(violation, rule.name, displayPath),
+              );
+            }
+          }
+
+          if (llmClient && config) {
+            await runLlmRules(
+              llmClient,
+              llmRegistry,
+              config,
+              content,
+              displayPath,
+              diagnostics,
+              hasLlmError,
+            );
+          }
+        }
+
+        const hasViolations =
+          diagnostics.length > 0 || hasReadError || hasLlmError.value;
+
+        if (format === "text") {
+          for (const diag of diagnostics) {
+            if (diag.line !== null) {
+              process.stdout.write(
+                `[${diag.rule}] ${diag.file}:${diag.line}: ${diag.message}\n`,
+              );
+            } else {
+              process.stdout.write(
+                `[${diag.rule}] ${diag.file}: ${diag.message}\n`,
+              );
+            }
+            if (diag.snippet) {
+              process.stdout.write(`  | ${diag.snippet}\n`);
+            }
+          }
+        } else {
+          process.stdout.write(JSON.stringify(diagnostics));
+        }
+
+        exitCode = hasViolations ? 1 : 0;
+      },
+    );
+
+  try {
+    const args = process.argv.slice(2);
+    if (args.length === 0) {
+      program.outputHelp();
+      return 0;
     }
+    await program.parseAsync(process.argv);
+  } catch {
+    // Commander throws on --help; check if help was requested
+    const args = process.argv.slice(2);
+    if (args.includes("--help") || args.includes("-h")) {
+      return 0;
+    }
+    return 1;
   }
 
-  const diagnostics: Array<LintDiagnostic> = [];
-  let hasReadError = false;
-  const hasLlmError = { value: false };
-
-  const skillFiles = globSync("**/SKILL.md", { cwd: rootPath });
-
-  for (const relPath of skillFiles) {
-    const fullPath = path.join(rootPath, relPath);
-    const displayPath = relPath;
-
-    let content: string;
-    try {
-      content = fs.readFileSync(fullPath, "utf-8");
-    } catch (e) {
-      process.stderr.write(
-        `error: could not read ${displayPath}: ${e instanceof Error ? e.message : e}\n`,
-      );
-      hasReadError = true;
-      continue;
-    }
-
-    for (const rule of registry.rules) {
-      if (config && !isRuleEnabled(config, rule.name)) continue;
-      for (const violation of rule.run(content)) {
-        diagnostics.push(fromViolation(violation, rule.name, displayPath));
-      }
-    }
-
-    if (llmClient && config) {
-      await runLlmRules(
-        llmClient,
-        llmRegistry,
-        config,
-        content,
-        displayPath,
-        diagnostics,
-        hasLlmError,
-      );
-    }
-  }
-
-  const hasViolations =
-    diagnostics.length > 0 || hasReadError || hasLlmError.value;
-
-  if (format === "text") {
-    for (const diag of diagnostics) {
-      if (diag.line !== null) {
-        process.stdout.write(
-          `[${diag.rule}] ${diag.file}:${diag.line}: ${diag.message}\n`,
-        );
-      } else {
-        process.stdout.write(`[${diag.rule}] ${diag.file}: ${diag.message}\n`);
-      }
-      if (diag.snippet) {
-        process.stdout.write(`  | ${diag.snippet}\n`);
-      }
-    }
-  } else {
-    process.stdout.write(JSON.stringify(diagnostics));
-  }
-
-  return hasViolations ? 1 : 0;
+  return exitCode;
 };
 
 if (import.meta.url === `file://${process.argv[1]}`) {

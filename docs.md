@@ -18,7 +18,7 @@ Path: @/
 
 ### Core Implementation
 
-- **Entry point:** `@/src/cli.ts` uses `commander` for CLI parsing, `glob` for file discovery, and native `fetch` for HTTP. The `run()` function is the async entry point that orchestrates the full lint pipeline. It self-invokes when run directly via `import.meta.url` check.
+- **Entry point:** `@/src/cli.ts` uses `commander` with a subcommand pattern for CLI parsing, `glob` for file discovery, and native `fetch` for HTTP. Running `nori-lint` with no arguments shows help; `nori-lint lint [path]` runs the linter. The `run()` function is the async entry point that orchestrates the full lint pipeline. It self-invokes when run directly via `import.meta.url` check.
 - **Two-tier rule system:** Deterministic rules conform to the `Rule` type (in `@/src/rules/index.ts`) and are registered into `Registry` (in `@/src/registry.ts`). LLM rules conform to the `LlmRule` type (in `@/src/rules/llm-rules/index.ts`) and are registered into `LlmRegistry` (in `@/src/llm-registry.ts`). Both produce `RuleViolation` structs from `@/src/diagnostic.ts`.
 - **Config-gated LLM execution:** LLM rules only run when a `.nori-lint.json` with a valid `anthropic_api_key` is present. Config can be provided via `--config <path>` or auto-discovered as `.nori-lint.json` in the working directory. Without config, a note is printed to stderr and only deterministic rules run.
 - **Concurrent LLM execution:** `runLlmRules()` in `@/src/cli.ts` fires all enabled LLM rules concurrently using `Promise.all`. Progress is printed to stderr before firing requests.
@@ -28,7 +28,7 @@ Path: @/
 
 ### Things to Know
 
-- CLI accepts `--format text|json` (default: `text`), `--config <path>` (optional), and `--help`/`-h`. Invalid format values produce an error on stderr and exit code 1.
+- CLI uses a subcommand pattern: `nori-lint lint [path]` runs the linter with `--format text|json` (default: `text`), `--config <path>` (optional), and `--help`/`-h`. Running `nori-lint` with no arguments shows help and exits 0. Invalid format values produce an error on stderr and exit code 1.
 - Config auto-discovery: if no `--config` flag is passed, the CLI checks for `.nori-lint.json` in the current working directory. If not found, only deterministic rules run.
 - `.nori-lint.json` is gitignored to prevent committing API keys.
 - Rule filtering semantics: `rules.enabled` is an allowlist, `rules.disabled` is a denylist, specifying both is a validation error. When no `rules` field exists, all rules run.
@@ -46,7 +46,9 @@ Path: @/
                            |
                        run() async
                            |
-                   commander.parse()  ── --help (exit 0)
+              commander.parseAsync()  ── --help (exit 0)
+                           |
+                  no args? ── outputHelp() (exit 0)
                       /    |
              Registry  resolveConfig()
             /                \
