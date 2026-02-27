@@ -72,4 +72,49 @@ export const redundantTitleRule: Rule = {
 
     return [];
   },
+  fix: (input) => {
+    const lines = input.split("\n");
+    const start = skipFrontmatter(lines);
+
+    let firstContentIdx = -1;
+    for (let i = start; i < lines.length; i++) {
+      if (lines[i].trim().length > 0) {
+        firstContentIdx = i;
+        break;
+      }
+    }
+
+    if (firstContentIdx === -1) return input;
+
+    const line = lines[firstContentIdx];
+    const linesToRemove: Array<number> = [];
+
+    if (line.startsWith("#")) {
+      linesToRemove.push(firstContentIdx);
+    } else {
+      const nextIdx = firstContentIdx + 1;
+      if (nextIdx < lines.length) {
+        const nextLine = lines[nextIdx].trim();
+        if (nextLine.length > 0 && isSetextUnderline(nextLine)) {
+          linesToRemove.push(firstContentIdx);
+          linesToRemove.push(nextIdx);
+        }
+      }
+    }
+
+    if (linesToRemove.length === 0) return input;
+
+    const kept = lines.filter((_, i) => !linesToRemove.includes(i));
+
+    // Strip leading blank lines after frontmatter/removal
+    let trimStart = start > 0 ? start : 0;
+    while (trimStart < kept.length && kept[trimStart].trim() === "") {
+      trimStart++;
+    }
+
+    const before = kept.slice(0, start > 0 ? start : 0);
+    const after = kept.slice(trimStart);
+
+    return [...before, ...after].join("\n");
+  },
 };

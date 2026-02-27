@@ -105,3 +105,81 @@ describe("bold_italics rule", () => {
     expect(boldItalicsRule.description.length).toBeGreaterThan(0);
   });
 });
+
+describe("bold_italics fix", () => {
+  test("strips **bold** to plain text", () => {
+    const result = boldItalicsRule.fix!("Some **bold** content.");
+    expect(result).toBe("Some bold content.");
+  });
+
+  test("strips *italic* to plain text", () => {
+    const result = boldItalicsRule.fix!("Some *italic* content.");
+    expect(result).toBe("Some italic content.");
+  });
+
+  test("strips __bold__ to plain text", () => {
+    const result = boldItalicsRule.fix!("Some __bold__ content.");
+    expect(result).toBe("Some bold content.");
+  });
+
+  test("strips ***bold italic*** to plain text", () => {
+    const result = boldItalicsRule.fix!("Some ***bold italic*** content.");
+    expect(result).toBe("Some bold italic content.");
+  });
+
+  test("preserves content inside fenced code blocks", () => {
+    const input = "```\n**bold inside code**\n```";
+    const result = boldItalicsRule.fix!(input);
+    expect(result).toBe(input);
+  });
+
+  test("preserves bullet list items starting with *", () => {
+    const input = "* Item one\n* Item two";
+    const result = boldItalicsRule.fix!(input);
+    expect(result).toBe(input);
+  });
+
+  test("preserves horizontal rule ***", () => {
+    const input = "Some text\n***\nMore text";
+    const result = boldItalicsRule.fix!(input);
+    expect(result).toBe(input);
+  });
+
+  test("preserves inline code with bold markers", () => {
+    const input = "Use `**bold**` for emphasis";
+    const result = boldItalicsRule.fix!(input);
+    expect(result).toBe(input);
+  });
+
+  test("fixes bold outside inline code, preserves inside", () => {
+    const input = "**bold** and `**not bold**`";
+    const result = boldItalicsRule.fix!(input);
+    expect(result).toBe("bold and `**not bold**`");
+  });
+
+  test("fixes multiple violations across lines", () => {
+    const input = "**bold** on line one\nplain text\n*italic* on line three";
+    const result = boldItalicsRule.fix!(input);
+    expect(result).toBe("bold on line one\nplain text\nitalic on line three");
+  });
+
+  test("returns unchanged content when no formatting present", () => {
+    const input = "Plain text with no formatting.";
+    const result = boldItalicsRule.fix!(input);
+    expect(result).toBe(input);
+  });
+
+  test("fix is idempotent", () => {
+    const input = "**bold** and *italic* and __underline__";
+    const first = boldItalicsRule.fix!(input);
+    const second = boldItalicsRule.fix!(first);
+    expect(second).toBe(first);
+  });
+
+  test("fix resolves all violations detected by run", () => {
+    const input = "**bold** and *italic* and __underline__";
+    const fixed = boldItalicsRule.fix!(input);
+    const violations = boldItalicsRule.run(fixed);
+    expect(violations).toEqual([]);
+  });
+});

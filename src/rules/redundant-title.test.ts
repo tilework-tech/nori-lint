@@ -90,3 +90,59 @@ describe("redundant_title rule", () => {
     expect(redundantTitleRule.description.length).toBeGreaterThan(0);
   });
 });
+
+describe("redundant_title fix", () => {
+  test("removes ATX heading at start of file", () => {
+    const result = redundantTitleRule.fix!("# My Title\n\nSome body text.");
+    expect(result).toBe("Some body text.");
+  });
+
+  test("removes ATX heading after frontmatter", () => {
+    const input = "---\ntitle: Test\n---\n# My Title\n\nBody text.";
+    const result = redundantTitleRule.fix!(input);
+    expect(result).toBe("---\ntitle: Test\n---\nBody text.");
+  });
+
+  test("removes setext h1 heading (text + === underline)", () => {
+    const input = "My Title\n========\n\nBody text.";
+    const result = redundantTitleRule.fix!(input);
+    expect(result).toBe("Body text.");
+  });
+
+  test("removes setext h2 heading (text + --- underline)", () => {
+    const input = "My Title\n--------\n\nBody text.";
+    const result = redundantTitleRule.fix!(input);
+    expect(result).toBe("Body text.");
+  });
+
+  test("removes setext heading after frontmatter", () => {
+    const input = "---\ntitle: Test\n---\nMy Title\n========\n\nBody text.";
+    const result = redundantTitleRule.fix!(input);
+    expect(result).toBe("---\ntitle: Test\n---\nBody text.");
+  });
+
+  test("returns unchanged content when no heading present", () => {
+    const input = "Some body text.\n\nMore text.";
+    const result = redundantTitleRule.fix!(input);
+    expect(result).toBe(input);
+  });
+
+  test("returns unchanged content for empty file", () => {
+    const result = redundantTitleRule.fix!("");
+    expect(result).toBe("");
+  });
+
+  test("fix is idempotent", () => {
+    const input = "# My Title\n\nSome body text.";
+    const first = redundantTitleRule.fix!(input);
+    const second = redundantTitleRule.fix!(first);
+    expect(second).toBe(first);
+  });
+
+  test("fix resolves all violations detected by run", () => {
+    const input = "# My Title\n\nSome body text.";
+    const fixed = redundantTitleRule.fix!(input);
+    const violations = redundantTitleRule.run(fixed);
+    expect(violations).toEqual([]);
+  });
+});

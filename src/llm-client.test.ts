@@ -1,4 +1,7 @@
-import { extractToolInputFromResponse } from "@/llm-client.js";
+import {
+  extractToolInputFromResponse,
+  extractFixFromResponse,
+} from "@/llm-client.js";
 
 describe("extractToolInputFromResponse", () => {
   test("extracts violations from tool_use response", () => {
@@ -116,5 +119,80 @@ describe("extractToolInputFromResponse", () => {
     expect(result.has_violations).toBe(true);
     expect(result.violations).toHaveLength(1);
     expect(result.violations[0].text).toBe("Bad pattern");
+  });
+});
+
+describe("extractFixFromResponse", () => {
+  test("extracts fixed_content from tool_use response", () => {
+    const body = {
+      content: [
+        {
+          type: "tool_use",
+          id: "tool_fix_1",
+          name: "apply_fixes",
+          input: {
+            fixed_content: "The corrected file content here.",
+          },
+        },
+      ],
+    };
+
+    const result = extractFixFromResponse(body);
+    expect(result).toBe("The corrected file content here.");
+  });
+
+  test("throws for missing tool_use block", () => {
+    const body = {
+      content: [{ type: "text", text: "No tool use" }],
+    };
+
+    expect(() => extractFixFromResponse(body)).toThrow();
+  });
+
+  test("throws for missing fixed_content field", () => {
+    const body = {
+      content: [
+        {
+          type: "tool_use",
+          id: "tool_fix_2",
+          name: "apply_fixes",
+          input: { something_else: "wrong field" },
+        },
+      ],
+    };
+
+    expect(() => extractFixFromResponse(body)).toThrow();
+  });
+
+  test("throws for non-string fixed_content", () => {
+    const body = {
+      content: [
+        {
+          type: "tool_use",
+          id: "tool_fix_3",
+          name: "apply_fixes",
+          input: { fixed_content: 42 },
+        },
+      ],
+    };
+
+    expect(() => extractFixFromResponse(body)).toThrow();
+  });
+
+  test("extracts fix when mixed with text blocks", () => {
+    const body = {
+      content: [
+        { type: "text", text: "preamble" },
+        {
+          type: "tool_use",
+          id: "tool_fix_4",
+          name: "apply_fixes",
+          input: { fixed_content: "Fixed content here." },
+        },
+      ],
+    };
+
+    const result = extractFixFromResponse(body);
+    expect(result).toBe("Fixed content here.");
   });
 });

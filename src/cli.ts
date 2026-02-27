@@ -28,7 +28,7 @@ import { unclosedTagsRule } from "@/rules/unclosed-tags.js";
 
 import type { Config } from "@/config.js";
 import type { LintDiagnostic } from "@/diagnostic.js";
-import type { LlmAnalyzer } from "@/llm-client.js";
+import type { LlmAnalyzer, LlmFixViolation } from "@/llm-client.js";
 
 /**
  *
@@ -75,6 +75,76 @@ function resolveConfig(cliConfigPath: string | undefined): Config | null {
   }
 
   return null;
+}
+
+type CommandSetup = {
+  config: Config | null;
+  registry: Registry;
+  llmRegistry: LlmRegistry;
+  llmClient: LlmAnalyzer | null;
+  skillFiles: Array<string>;
+  rootPath: string;
+};
+
+/**
+ *
+ * @param parsedPath
+ * @param configPath
+ */
+function setupCommand(
+  parsedPath: string,
+  configPath: string | undefined,
+): CommandSetup | { error: string } {
+  let config: Config | null;
+  try {
+    config = resolveConfig(configPath);
+  } catch (e) {
+    return { error: `error: ${e instanceof Error ? e.message : e}` };
+  }
+
+  const rootPath = parsedPath;
+
+  if (!fs.existsSync(rootPath)) {
+    return { error: `error: ${rootPath} does not exist` };
+  }
+
+  const stat = fs.statSync(rootPath);
+  if (!stat.isDirectory()) {
+    return { error: `error: ${rootPath} is not a directory` };
+  }
+
+  const registry = defaultRegistry();
+
+  if (!config) {
+    process.stderr.write(
+      "note: skipping LLM rules (no .nori-lint.json found; use --config to specify)\n",
+    );
+  }
+
+  const llmClient = config
+    ? new AnthropicClient(config.anthropic_api_key)
+    : null;
+  const llmRegistry = config ? defaultLlmRegistry() : new LlmRegistry();
+
+  if (config) {
+    const allKnownRules = [
+      ...registry.rules.map((r) => r.name),
+      ...llmRegistry.rules.map((r) => r.name),
+    ];
+
+    if (config.rules) {
+      const namesToCheck = config.rules.enabled ?? config.rules.disabled ?? [];
+      for (const name of namesToCheck) {
+        if (!allKnownRules.includes(name)) {
+          process.stderr.write(`warning: unknown rule '${name}' in config\n`);
+        }
+      }
+    }
+  }
+
+  const skillFiles = globSync("**/SKILL.md", { cwd: rootPath });
+
+  return { config, registry, llmRegistry, llmClient, skillFiles, rootPath };
 }
 
 /**
@@ -158,7 +228,6 @@ export const run = async (): Promise<number> => {
     .action(
       async (parsedPath: string, opts: { format: string; config?: string }) => {
         const format = opts.format;
-        const configPath = opts.config;
 
         if (format !== "text" && format !== "json") {
           process.stderr.write(
@@ -168,69 +237,25 @@ export const run = async (): Promise<number> => {
           return;
         }
 
-        let config: Config | null;
-        try {
-          config = resolveConfig(configPath);
-        } catch (e) {
-          process.stderr.write(
-            `error: ${e instanceof Error ? e.message : e}\n`,
-          );
+        const setup = setupCommand(parsedPath, opts.config);
+        if ("error" in setup) {
+          process.stderr.write(`${setup.error}\n`);
           exitCode = 1;
           return;
         }
 
-        const rootPath = parsedPath;
-
-        if (!fs.existsSync(rootPath)) {
-          process.stderr.write(`error: ${rootPath} does not exist\n`);
-          exitCode = 1;
-          return;
-        }
-
-        const stat = fs.statSync(rootPath);
-        if (!stat.isDirectory()) {
-          process.stderr.write(`error: ${rootPath} is not a directory\n`);
-          exitCode = 1;
-          return;
-        }
-
-        const registry = defaultRegistry();
-
-        if (!config) {
-          process.stderr.write(
-            "note: skipping LLM rules (no .nori-lint.json found; use --config to specify)\n",
-          );
-        }
-
-        const llmClient = config
-          ? new AnthropicClient(config.anthropic_api_key)
-          : null;
-        const llmRegistry = config ? defaultLlmRegistry() : new LlmRegistry();
-
-        if (config) {
-          const allKnownRules = [
-            ...registry.rules.map((r) => r.name),
-            ...llmRegistry.rules.map((r) => r.name),
-          ];
-
-          if (config.rules) {
-            const namesToCheck =
-              config.rules.enabled ?? config.rules.disabled ?? [];
-            for (const name of namesToCheck) {
-              if (!allKnownRules.includes(name)) {
-                process.stderr.write(
-                  `warning: unknown rule '${name}' in config\n`,
-                );
-              }
-            }
-          }
-        }
+        const {
+          config,
+          registry,
+          llmRegistry,
+          llmClient,
+          skillFiles,
+          rootPath,
+        } = setup;
 
         const diagnostics: Array<LintDiagnostic> = [];
         let hasReadError = false;
         const hasLlmError = { value: false };
-
-        const skillFiles = globSync("**/SKILL.md", { cwd: rootPath });
 
         for (const relPath of skillFiles) {
           const fullPath = path.join(rootPath, relPath);
@@ -292,6 +317,133 @@ export const run = async (): Promise<number> => {
         }
 
         exitCode = hasViolations ? 1 : 0;
+      },
+    );
+
+  program
+    .command("fix")
+    .description("Auto-fix SKILL.md files for common issues")
+    .argument("[path]", "Directory to fix", ".")
+    .option("--config <path>", "Path to config file")
+    .option("--dry-run", "Show what would change without writing")
+    .action(
+      async (
+        parsedPath: string,
+        opts: { config?: string; dryRun?: boolean },
+      ) => {
+        const dryRun = opts.dryRun ?? false;
+
+        const setup = setupCommand(parsedPath, opts.config);
+        if ("error" in setup) {
+          process.stderr.write(`${setup.error}\n`);
+          exitCode = 1;
+          return;
+        }
+
+        const {
+          config,
+          registry,
+          llmRegistry,
+          llmClient,
+          skillFiles,
+          rootPath,
+        } = setup;
+
+        let hasError = false;
+
+        for (const relPath of skillFiles) {
+          const fullPath = path.join(rootPath, relPath);
+          const displayPath = relPath;
+
+          let content: string;
+          try {
+            content = fs.readFileSync(fullPath, "utf-8");
+          } catch (e) {
+            process.stderr.write(
+              `error: could not read ${displayPath}: ${e instanceof Error ? e.message : e}\n`,
+            );
+            hasError = true;
+            continue;
+          }
+
+          const original = content;
+          const unfixableDiagnostics: Array<LintDiagnostic> = [];
+
+          // Apply deterministic fixes
+          for (const rule of registry.rules) {
+            if (config && !isRuleEnabled(config, rule.name)) continue;
+            const violations = rule.run(content);
+            if (violations.length > 0) {
+              if (rule.fix) {
+                content = rule.fix(content);
+              } else {
+                for (const violation of violations) {
+                  unfixableDiagnostics.push(
+                    fromViolation(violation, rule.name, displayPath),
+                  );
+                }
+              }
+            }
+          }
+
+          // Collect LLM violations and fix in a single call
+          if (llmClient && config) {
+            const llmDiagnostics: Array<LintDiagnostic> = [];
+            const hasLlmError = { value: false };
+            await runLlmRules(
+              llmClient,
+              llmRegistry,
+              config,
+              content,
+              displayPath,
+              llmDiagnostics,
+              hasLlmError,
+            );
+
+            if (hasLlmError.value) {
+              hasError = true;
+            }
+
+            if (llmDiagnostics.length > 0) {
+              const fixViolations: Array<LlmFixViolation> = llmDiagnostics.map(
+                (d) => ({
+                  rule: d.rule,
+                  message: d.message,
+                }),
+              );
+              try {
+                content = await llmClient.fixContent(content, fixViolations);
+              } catch (e) {
+                process.stderr.write(
+                  `error: LLM fix failed for ${displayPath}: ${e}\n`,
+                );
+                hasError = true;
+              }
+            }
+          }
+
+          // Report unfixable violations
+          for (const diag of unfixableDiagnostics) {
+            process.stderr.write(
+              `[${diag.rule}] ${diag.file}: ${diag.message} (unfixable)\n`,
+            );
+          }
+
+          if (content !== original) {
+            if (dryRun) {
+              process.stdout.write(`--- ${displayPath} (before)\n`);
+              process.stdout.write(original);
+              process.stdout.write(`\n+++ ${displayPath} (after)\n`);
+              process.stdout.write(content);
+              process.stdout.write("\n");
+            } else {
+              fs.writeFileSync(fullPath, content, "utf-8");
+              process.stderr.write(`fixed: ${displayPath}\n`);
+            }
+          }
+        }
+
+        exitCode = hasError ? 1 : 0;
       },
     );
 

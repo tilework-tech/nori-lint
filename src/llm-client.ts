@@ -16,8 +16,17 @@ export class LlmError extends Error {
   }
 }
 
+export type LlmFixViolation = {
+  rule: string;
+  message: string;
+};
+
 export type LlmAnalyzer = {
   analyze: (systemPrompt: string, userContent: string) => Promise<LlmResponse>;
+  fixContent: (
+    fileContent: string,
+    violations: Array<LlmFixViolation>,
+  ) => Promise<string>;
 };
 
 export const extractToolInputFromResponse = (body: unknown): LlmResponse => {
@@ -52,6 +61,32 @@ export const extractToolInputFromResponse = (body: unknown): LlmResponse => {
     violations: input.violations as Array<LlmViolation>,
   };
 };
+
+export const extractFixFromResponse = (body: unknown): string => {
+  const obj = body as Record<string, unknown>;
+  const content = obj.content as Array<Record<string, unknown>> | undefined;
+  if (!content || !Array.isArray(content)) {
+    throw new LlmError("parse", "missing content array in API response");
+  }
+
+  const toolBlock = content.find((block) => block.type === "tool_use");
+  if (!toolBlock) {
+    throw new LlmError("parse", "no tool_use block in API response");
+  }
+
+  const input = toolBlock.input as Record<string, unknown>;
+  if (typeof input.fixed_content !== "string") {
+    throw new LlmError(
+      "parse",
+      "failed to parse tool input: fixed_content must be a string",
+    );
+  }
+
+  return input.fixed_content as string;
+};
+
+const FIX_TOOL_NAME = "apply_fixes";
+const FIX_MAX_TOKENS = 8192;
 
 export class AnthropicClient implements LlmAnalyzer {
   private apiKey: string;
@@ -120,5 +155,71 @@ export class AnthropicClient implements LlmAnalyzer {
 
     const responseBody: unknown = await response.json();
     return extractToolInputFromResponse(responseBody);
+  }
+
+  async fixContent(
+    fileContent: string,
+    violations: Array<LlmFixViolation>,
+  ): Promise<string> {
+    const violationList = violations
+      .map((v) => `- [${v.rule}] ${v.message}`)
+      .join("\n");
+
+    const systemPrompt = `You are fixing a SKILL.md file based on lint violations found by a linter. Apply the minimum changes needed to resolve each violation while preserving the file's meaning and structure. Do not add new content or make changes beyond what is needed to fix the violations.`;
+
+    const userMessage = `Here is the file content:\n\n${fileContent}\n\nThe following violations were found:\n${violationList}\n\nFix all violations and return the corrected file content.`;
+
+    const body = {
+      model: MODEL,
+      max_tokens: FIX_MAX_TOKENS,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userMessage }],
+      tools: [
+        {
+          name: FIX_TOOL_NAME,
+          description: "Return the fixed file content",
+          input_schema: {
+            type: "object",
+            properties: {
+              fixed_content: {
+                type: "string",
+                description: "The complete fixed file content",
+              },
+            },
+            required: ["fixed_content"],
+          },
+        },
+      ],
+      tool_choice: { type: "tool", name: FIX_TOOL_NAME },
+    };
+
+    const response = await fetch(ANTHROPIC_API_URL, {
+      method: "POST",
+      headers: {
+        "x-api-key": this.apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+    });
+
+    if (!response.ok) {
+      const bodyText = await response.text();
+      throw new LlmError(
+        "http",
+        `API returned status ${response.status}: ${bodyText}`,
+      );
+    }
+
+    const responseBody: unknown = await response.json();
+    const obj = responseBody as Record<string, unknown>;
+    if (obj.stop_reason === "max_tokens") {
+      throw new LlmError(
+        "parse",
+        "LLM response was truncated (max_tokens reached); fix may be incomplete",
+      );
+    }
+    return extractFixFromResponse(responseBody);
   }
 }

@@ -605,4 +605,165 @@ describe("CLI integration tests", () => {
       expect(stderr).toContain("nonexistent_rule");
     });
   });
+
+  describe("fix subcommand - basic behavior", () => {
+    test("exits success when no skill files found", async () => {
+      const dir = createTempDir();
+      const { code } = await withArgs(["fix", dir]);
+      expect(code).toBe(0);
+    });
+
+    test("exits success for valid skill file with no violations", async () => {
+      const dir = createTempDir();
+      const skillDir = path.join(dir, "my-skill");
+      fs.mkdirSync(skillDir);
+      fs.writeFileSync(path.join(skillDir, "SKILL.md"), smallSkillContent());
+
+      const { code } = await withArgs(["fix", dir]);
+      expect(code).toBe(0);
+    });
+
+    test("does not modify file with no violations", async () => {
+      const dir = createTempDir();
+      const skillDir = path.join(dir, "my-skill");
+      fs.mkdirSync(skillDir);
+      const skillPath = path.join(skillDir, "SKILL.md");
+      const original = smallSkillContent();
+      fs.writeFileSync(skillPath, original);
+
+      await withArgs(["fix", dir]);
+      expect(fs.readFileSync(skillPath, "utf-8")).toBe(original);
+    });
+
+    test("fixes bold formatting in skill file", async () => {
+      const dir = createTempDir();
+      const skillDir = path.join(dir, "my-skill");
+      fs.mkdirSync(skillDir);
+      const skillPath = path.join(skillDir, "SKILL.md");
+      fs.writeFileSync(skillPath, skillWithBoldText());
+
+      await withArgs(["fix", dir]);
+      const fixed = fs.readFileSync(skillPath, "utf-8");
+      expect(fixed).not.toContain("**bold**");
+      expect(fixed).toContain("bold");
+    });
+
+    test("fixes markdown link syntax in skill file", async () => {
+      const dir = createTempDir();
+      const skillDir = path.join(dir, "my-skill");
+      fs.mkdirSync(skillDir);
+      const skillPath = path.join(skillDir, "SKILL.md");
+      fs.writeFileSync(skillPath, skillWithMarkdownLink());
+
+      await withArgs(["fix", dir]);
+      const fixed = fs.readFileSync(skillPath, "utf-8");
+      expect(fixed).not.toContain("[the docs]");
+      expect(fixed).toContain("https://example.com");
+    });
+
+    test("fixes redundant title heading in skill file", async () => {
+      const dir = createTempDir();
+      const skillDir = path.join(dir, "my-skill");
+      fs.mkdirSync(skillDir);
+      const skillPath = path.join(skillDir, "SKILL.md");
+      fs.writeFileSync(skillPath, skillWithRedundantTitle());
+
+      await withArgs(["fix", dir]);
+      const fixed = fs.readFileSync(skillPath, "utf-8");
+      expect(fixed).not.toContain("# The Test Skill");
+    });
+
+    test("reports error for nonexistent directory", async () => {
+      const { code, stderr } = await withArgs([
+        "fix",
+        "/tmp/nonexistent-dir-xyz-123",
+      ]);
+      expect(code).toBe(1);
+      expect(stderr).toContain("does not exist");
+    });
+
+    test("reports error for file instead of directory", async () => {
+      const dir = createTempDir();
+      const filePath = path.join(dir, "somefile.txt");
+      fs.writeFileSync(filePath, "hello");
+
+      const { code, stderr } = await withArgs(["fix", filePath]);
+      expect(code).toBe(1);
+      expect(stderr).toContain("is not a directory");
+    });
+
+    test("reports unfixable violations on stderr", async () => {
+      const dir = createTempDir();
+      const skillDir = path.join(dir, "my-skill");
+      fs.mkdirSync(skillDir);
+      fs.writeFileSync(path.join(skillDir, "SKILL.md"), largeSkillContent());
+
+      const { stderr } = await withArgs(["fix", dir]);
+      expect(stderr).toContain("line_count");
+    });
+  });
+
+  describe("fix subcommand - --dry-run", () => {
+    test("does not modify files when --dry-run is set", async () => {
+      const dir = createTempDir();
+      const skillDir = path.join(dir, "my-skill");
+      fs.mkdirSync(skillDir);
+      const skillPath = path.join(skillDir, "SKILL.md");
+      const original = skillWithBoldText();
+      fs.writeFileSync(skillPath, original);
+
+      await withArgs(["fix", "--dry-run", dir]);
+      expect(fs.readFileSync(skillPath, "utf-8")).toBe(original);
+    });
+
+    test("shows before/after content on stdout when --dry-run is set", async () => {
+      const dir = createTempDir();
+      const skillDir = path.join(dir, "my-skill");
+      fs.mkdirSync(skillDir);
+      fs.writeFileSync(path.join(skillDir, "SKILL.md"), skillWithBoldText());
+
+      const { stdout } = await withArgs(["fix", "--dry-run", dir]);
+      expect(stdout).toContain("bold");
+    });
+  });
+
+  describe("fix subcommand - --config", () => {
+    test("without config, deterministic fixes still apply", async () => {
+      const dir = createTempDir();
+      const skillDir = path.join(dir, "my-skill");
+      fs.mkdirSync(skillDir);
+      const skillPath = path.join(skillDir, "SKILL.md");
+      fs.writeFileSync(skillPath, skillWithBoldText());
+
+      await withArgs(["fix", dir]);
+      const fixed = fs.readFileSync(skillPath, "utf-8");
+      expect(fixed).not.toContain("**bold**");
+    });
+
+    test("disabled rule is not applied as a fix", async () => {
+      const dir = createTempDir();
+      const configPath = path.join(dir, "config.json");
+      fs.writeFileSync(
+        configPath,
+        validConfigWithDisabledRules(["bold_italics"]),
+      );
+
+      const skillDir = path.join(dir, "my-skill");
+      fs.mkdirSync(skillDir);
+      const skillPath = path.join(skillDir, "SKILL.md");
+      fs.writeFileSync(skillPath, skillWithBoldText());
+
+      await withArgs(["fix", "--config", configPath, dir]);
+      const result = fs.readFileSync(skillPath, "utf-8");
+      expect(result).toContain("**bold**");
+    });
+  });
+
+  describe("fix subcommand - --help", () => {
+    test("help flag prints usage and exits success", async () => {
+      const { code, stdout } = await withArgs(["fix", "--help"]);
+      expect(code).toBe(0);
+      expect(stdout).toContain("Usage");
+    });
+  });
 });
