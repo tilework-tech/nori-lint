@@ -110,3 +110,82 @@ describe("markdown_links rule", () => {
     expect(markdownLinksRule.description.length).toBeGreaterThan(0);
   });
 });
+
+describe("markdown_links fix", () => {
+  test("replaces [text](url) with bare url", () => {
+    const result = markdownLinksRule.fix!(
+      "See [the docs](https://example.com) for details.",
+    );
+    expect(result).toBe("See https://example.com for details.");
+  });
+
+  test("preserves content inside fenced code blocks", () => {
+    const input = "```\n[link](https://example.com)\n```";
+    const result = markdownLinksRule.fix!(input);
+    expect(result).toBe(input);
+  });
+
+  test("preserves image links ![alt](url)", () => {
+    const input = "![alt text](https://example.com/img.png)";
+    const result = markdownLinksRule.fix!(input);
+    expect(result).toBe(input);
+  });
+
+  test("preserves reference-style definitions", () => {
+    const input = "[google]: https://google.com";
+    const result = markdownLinksRule.fix!(input);
+    expect(result).toBe(input);
+  });
+
+  test("preserves content inside example tags", () => {
+    const input =
+      "<good-example>\n[link](https://example.com)\n</good-example>";
+    const result = markdownLinksRule.fix!(input);
+    expect(result).toBe(input);
+  });
+
+  test("fixes multiple links on different lines", () => {
+    const input = "[one](https://one.com)\nplain text\n[two](https://two.com)";
+    const result = markdownLinksRule.fix!(input);
+    expect(result).toBe("https://one.com\nplain text\nhttps://two.com");
+  });
+
+  test("fixes multiple links on same line", () => {
+    const input = "[one](https://one.com) and [two](https://two.com)";
+    const result = markdownLinksRule.fix!(input);
+    expect(result).toBe("https://one.com and https://two.com");
+  });
+
+  test("returns unchanged content when no links present", () => {
+    const input = "Plain text with no links at all.";
+    const result = markdownLinksRule.fix!(input);
+    expect(result).toBe(input);
+  });
+
+  test("preserves inline code with link syntax", () => {
+    const input = "Use `[link](url)` syntax.";
+    const result = markdownLinksRule.fix!(input);
+    expect(result).toBe(input);
+  });
+
+  test("strips title from link with title attribute", () => {
+    const result = markdownLinksRule.fix!(
+      'See [docs](https://example.com "Homepage") here.',
+    );
+    expect(result).toBe("See https://example.com here.");
+  });
+
+  test("fix is idempotent", () => {
+    const input = "[one](https://one.com) and [two](https://two.com)";
+    const first = markdownLinksRule.fix!(input);
+    const second = markdownLinksRule.fix!(first);
+    expect(second).toBe(first);
+  });
+
+  test("fix resolves all violations detected by run", () => {
+    const input = "[one](https://one.com) and [two](https://two.com)";
+    const fixed = markdownLinksRule.fix!(input);
+    const violations = markdownLinksRule.run(fixed);
+    expect(violations).toEqual([]);
+  });
+});

@@ -114,6 +114,73 @@ function findMarkdownLinks(
   }
 }
 
+/**
+ *
+ * @param line
+ */
+function replaceMarkdownLinks(line: string): string {
+  let result = "";
+  let i = 0;
+
+  while (i < line.length) {
+    // Preserve inline code spans
+    if (line[i] === "`") {
+      const codeStart = i;
+      i++;
+      while (i < line.length && line[i] !== "`") {
+        i++;
+      }
+      if (i < line.length) {
+        result += line.slice(codeStart, i + 1);
+        i++;
+      } else {
+        result += line.slice(codeStart);
+      }
+      continue;
+    }
+
+    // Skip image links ![alt](url)
+    if (line[i] === "[" && i > 0 && line[i - 1] === "!") {
+      result += line[i];
+      i++;
+      continue;
+    }
+
+    if (line[i] === "[") {
+      const closeBracket = line.indexOf("]", i + 1);
+      if (closeBracket === -1) {
+        result += line[i];
+        i++;
+        continue;
+      }
+      const linkText = line.slice(i + 1, closeBracket);
+      if (linkText.length === 0) {
+        result += line.slice(i, closeBracket + 1);
+        i = closeBracket + 1;
+        continue;
+      }
+      if (closeBracket + 1 < line.length && line[closeBracket + 1] === "(") {
+        const closeParen = line.indexOf(")", closeBracket + 2);
+        if (closeParen !== -1) {
+          const rawUrl = line.slice(closeBracket + 2, closeParen);
+          const spaceIdx = rawUrl.indexOf(" ");
+          const url = spaceIdx !== -1 ? rawUrl.slice(0, spaceIdx) : rawUrl;
+          result += url;
+          i = closeParen + 1;
+          continue;
+        }
+      }
+      result += line[i];
+      i++;
+    } else {
+      result += line[i];
+      i++;
+    }
+  }
+
+  return result;
+}
+
 export const markdownLinksRule: Rule = {
   name: "markdown_links",
   description:
@@ -160,5 +227,55 @@ export const markdownLinksRule: Rule = {
     }
 
     return violations;
+  },
+  fix: (input) => {
+    let inCodeBlock = false;
+    let inExampleBlock = false;
+    const lines = input.split("\n");
+    const result: Array<string> = [];
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      if (isExampleTagOpen(trimmed)) {
+        inExampleBlock = true;
+        result.push(line);
+        continue;
+      }
+      if (isExampleTagClose(trimmed)) {
+        inExampleBlock = false;
+        result.push(line);
+        continue;
+      }
+      if (inExampleBlock) {
+        result.push(line);
+        continue;
+      }
+
+      if (trimmed.startsWith("```")) {
+        inCodeBlock = !inCodeBlock;
+        result.push(line);
+        continue;
+      }
+      if (inCodeBlock) {
+        result.push(line);
+        continue;
+      }
+
+      if (trimmed.startsWith("[")) {
+        const bracketEnd = trimmed.indexOf("]");
+        if (
+          bracketEnd !== -1 &&
+          trimmed.slice(bracketEnd + 1).startsWith(": ")
+        ) {
+          result.push(line);
+          continue;
+        }
+      }
+
+      result.push(replaceMarkdownLinks(line));
+    }
+
+    return result.join("\n");
   },
 };

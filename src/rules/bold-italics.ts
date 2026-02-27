@@ -160,6 +160,118 @@ function findSingleStarPatterns(
   }
 }
 
+/**
+ *
+ * @param line
+ */
+function fixLineFormatting(line: string): string {
+  let result = "";
+  let i = 0;
+
+  while (i < line.length) {
+    // Preserve inline code spans
+    if (line[i] === "`") {
+      const codeStart = i;
+      i++;
+      while (i < line.length && line[i] !== "`") {
+        i++;
+      }
+      if (i < line.length) {
+        result += line.slice(codeStart, i + 1);
+        i++;
+      } else {
+        result += line.slice(codeStart);
+      }
+      continue;
+    }
+
+    // Handle *** (bold italic)
+    if (
+      i + 2 < line.length &&
+      line[i] === "*" &&
+      line[i + 1] === "*" &&
+      line[i + 2] === "*"
+    ) {
+      const afterOpen = i + 3;
+      const close = line.indexOf("***", afterOpen);
+      if (close !== -1) {
+        result += line.slice(afterOpen, close);
+        i = close + 3;
+        continue;
+      }
+    }
+
+    // Handle ** (bold)
+    if (i + 1 < line.length && line[i] === "*" && line[i + 1] === "*") {
+      const afterOpen = i + 2;
+      const close = line.indexOf("**", afterOpen);
+      if (close !== -1) {
+        const inner = line.slice(afterOpen, close);
+        if (
+          inner.length > 0 &&
+          ![...inner].every((c) => c === "*" || c === " ")
+        ) {
+          result += inner;
+          i = close + 2;
+          continue;
+        }
+      }
+    }
+
+    // Handle __ (bold)
+    if (i + 1 < line.length && line[i] === "_" && line[i + 1] === "_") {
+      const afterOpen = i + 2;
+      const close = line.indexOf("__", afterOpen);
+      if (close !== -1) {
+        const inner = line.slice(afterOpen, close);
+        if (inner.length > 0) {
+          result += inner;
+          i = close + 2;
+          continue;
+        }
+      }
+    }
+
+    // Handle * (italic) - but not ** or bullet
+    if (line[i] === "*") {
+      const isDouble =
+        (i + 1 < line.length && line[i + 1] === "*") ||
+        (i > 0 && line[i - 1] === "*");
+      if (!isDouble) {
+        const afterOpen = i + 1;
+        let closeIdx = -1;
+        let closeSearch = afterOpen;
+        while (closeSearch < line.length) {
+          const close = line.indexOf("*", closeSearch);
+          if (close === -1) break;
+          const isDoubleAfter =
+            close + 1 < line.length && line[close + 1] === "*";
+          const isDoubleBefore = close > 0 && line[close - 1] === "*";
+          if (isDoubleAfter || isDoubleBefore) {
+            closeSearch = close + 1;
+            continue;
+          }
+          if (close > afterOpen) {
+            closeIdx = close;
+            break;
+          }
+          closeSearch = close + 1;
+        }
+        if (closeIdx !== -1) {
+          result += line.slice(afterOpen, closeIdx);
+          i = closeIdx + 1;
+          continue;
+        }
+      }
+    }
+
+    result += line[i];
+    i++;
+  }
+
+  return result;
+}
+
 export const boldItalicsRule: Rule = {
   name: "bold_italics",
   description:
@@ -197,5 +309,42 @@ export const boldItalicsRule: Rule = {
     }
 
     return violations;
+  },
+  fix: (input) => {
+    let inCodeBlock = false;
+    const lines = input.split("\n");
+    const result: Array<string> = [];
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      if (trimmed.startsWith("```")) {
+        inCodeBlock = !inCodeBlock;
+        result.push(line);
+        continue;
+      }
+      if (inCodeBlock) {
+        result.push(line);
+        continue;
+      }
+
+      if (trimmed.startsWith("* ")) {
+        result.push(line);
+        continue;
+      }
+
+      if (
+        trimmed.length > 0 &&
+        [...trimmed].every((c) => c === "*" || c === " ") &&
+        [...trimmed].filter((c) => c === "*").length >= 3
+      ) {
+        result.push(line);
+        continue;
+      }
+
+      result.push(fixLineFormatting(line));
+    }
+
+    return result.join("\n");
   },
 };
