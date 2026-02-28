@@ -21,7 +21,7 @@ Path: @/
 - **Entry point:** `@/src/cli.ts` uses `commander` with a subcommand pattern for CLI parsing, `glob` for file discovery, and native `fetch` for HTTP. Running `nori-lint` with no arguments shows help; `nori-lint lint [path]` reports violations; `nori-lint fix [path]` auto-fixes them. The `run()` function is the async entry point. It self-invokes when run directly via `import.meta.url` check.
 - **Two-tier rule system:** Deterministic rules conform to the `Rule` type (in `@/src/rules/index.ts`) and are registered into `Registry` (in `@/src/registry.ts`). LLM rules conform to the `LlmRule` type (in `@/src/rules/llm-rules/index.ts`) and are registered into `LlmRegistry` (in `@/src/llm-registry.ts`). Both produce `RuleViolation` structs from `@/src/diagnostic.ts`.
 - **Deterministic fix support:** The `Rule` type has an optional `fix` method. Rules that implement `fix` can auto-correct violations (e.g., `bold_italics`, `markdown_links`, `redundant_title`). Rules without `fix` (e.g., `line_count`, `required_tags`, `unclosed_tags`) are reported as unfixable during `nori-lint fix`.
-- **LLM fix support:** When a config is present, the `fix` subcommand collects LLM rule violations, then calls `LlmAnalyzer.fixContent()` with all violations batched into a single LLM API call per file. The LLM returns the corrected file content via a `apply_fixes` tool_use response.
+- **LLM fix support:** When a config is present, the `fix` subcommand collects LLM rule violations, then calls `LlmAnalyzer.fixContent()` with all violations batched into a single LLM API call per file. Before sending content to the LLM, fenced code blocks are masked out with HTML comment placeholders via `maskCodeBlocks()` from `@/src/code-block-mask.ts`; after receiving the fix, `restoreCodeBlocks()` swaps the placeholders back, throwing if any placeholder was removed. This structurally guarantees code block content is untouched by the LLM. The masking happens at the call site in `cli.ts`, keeping the LLM client generic. The LLM returns the corrected file content via a `apply_fixes` tool_use response.
 - **Config-gated LLM execution:** LLM rules only run when a `.nori-lint.json` with a valid `anthropic_api_key` is present. Config can be provided via `--config <path>` or auto-discovered as `.nori-lint.json` in the working directory. Without config, a note is printed to stderr and only deterministic rules run.
 - **Concurrent LLM execution:** `runLlmRules()` in `@/src/cli.ts` fires all enabled LLM rules concurrently using `Promise.all`. Progress is printed to stderr before firing requests.
 - **Rule filtering:** The config file supports a `rules` object with mutually exclusive `enabled` (allowlist) and `disabled` (denylist) fields. `isRuleEnabled()` in `@/src/config.ts` provides the filtering logic. Filtering is applied at the execution loop level in `@/src/cli.ts`. Registries always contain all rules regardless of config.
@@ -69,7 +69,11 @@ Path: @/
      per file: run rules        per file: run + fix rules
      collect diagnostics        deterministic: rule.fix()
      format (text/json)         LLM: batch violations ->
-                |                 llmClient.fixContent()
+                |                 maskCodeBlocks(content)
+                |                       |
+                |                 llmClient.fixContent(masked)
+                |                       |
+                |                 restoreCodeBlocks(fixed)
                 |                       |
                 |               write file or --dry-run
                 |                       |

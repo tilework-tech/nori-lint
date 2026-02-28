@@ -165,7 +165,7 @@ export class AnthropicClient implements LlmAnalyzer {
       .map((v) => `- [${v.rule}] ${v.message}`)
       .join("\n");
 
-    const systemPrompt = `You are fixing a SKILL.md file based on lint violations found by a linter. Apply the minimum changes needed to resolve each violation while preserving the file's meaning and structure. Do not add new content or make changes beyond what is needed to fix the violations.`;
+    const systemPrompt = `You are fixing a SKILL.md file based on lint violations found by a linter. Apply the minimum changes needed to resolve each violation while preserving the file's meaning and structure. Do not add new content or make changes beyond what is needed to fix the violations. NEVER remove or modify URLs unless a violation specifically asks you to.`;
 
     const userMessage = `Here is the file content:\n\n${fileContent}\n\nThe following violations were found:\n${violationList}\n\nFix all violations and return the corrected file content.`;
 
