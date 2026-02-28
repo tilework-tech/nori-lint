@@ -6,7 +6,6 @@ import path from "node:path";
 import { Command } from "commander";
 import { globSync } from "glob";
 
-import { maskCodeBlocks, restoreCodeBlocks } from "@/code-block-mask.js";
 import { loadConfig, isRuleEnabled } from "@/config.js";
 import { fromViolation } from "@/diagnostic.js";
 import { AnthropicClient } from "@/llm-client.js";
@@ -413,12 +412,7 @@ export const run = async (): Promise<number> => {
                 }),
               );
               try {
-                const { masked, blocks } = maskCodeBlocks(content);
-                const fixedMasked = await llmClient.fixContent(
-                  masked,
-                  fixViolations,
-                );
-                content = restoreCodeBlocks(fixedMasked, blocks);
+                content = await llmClient.fixContent(content, fixViolations);
               } catch (e) {
                 process.stderr.write(
                   `error: LLM fix failed for ${displayPath}: ${e}\n`,
