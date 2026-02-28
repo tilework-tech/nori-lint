@@ -169,9 +169,7 @@ export class AnthropicClient implements LlmAnalyzer {
 
 Rules:
 - ONLY modify the specific text cited in each violation. Do not touch anything else.
-- NEVER modify content inside fenced code blocks (\`\`\`). Code blocks must be returned exactly as they appear.
-- NEVER remove or modify URLs.
-- NEVER remove lines or sections that are not cited in a violation.
+- NEVER remove or modify lines, sections, or content that are not directly cited in a violation.
 - Do not add new content.
 - Preserve the file's structure, meaning, and whitespace.`;
 
