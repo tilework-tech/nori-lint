@@ -635,6 +635,24 @@ describe("CLI integration tests", () => {
       expect(fs.readFileSync(skillPath, "utf-8")).toBe(original);
     });
 
+    test("preserves code block content during deterministic fix", async () => {
+      const dir = createTempDir();
+      const skillDir = path.join(dir, "my-skill");
+      fs.mkdirSync(skillDir);
+      const skillPath = path.join(skillDir, "SKILL.md");
+      const content =
+        '---\nname: Test Skill\ndescription: A test skill\n---\n\n<required>\nSome **bold** text outside code block.\n\n```bash\ngit push -u origin [feature-branch]\ngh pr create --title "[title]" --body "$(cat <<\'EOF\'\n## Summary\n🤖 Generated with [Nori](https://www.npmjs.com/package/nori-ai)\nEOF\n)"\n```\n</required>\n';
+      fs.writeFileSync(skillPath, content);
+
+      await withArgs(["fix", dir]);
+      const fixed = fs.readFileSync(skillPath, "utf-8");
+      // Bold outside code block should be fixed
+      expect(fixed).not.toContain("**bold**");
+      // URL inside code block must be preserved exactly
+      expect(fixed).toContain("https://www.npmjs.com/package/nori-ai");
+      expect(fixed).toContain("[Nori](https://www.npmjs.com/package/nori-ai)");
+    });
+
     test("fixes bold formatting in skill file", async () => {
       const dir = createTempDir();
       const skillDir = path.join(dir, "my-skill");
