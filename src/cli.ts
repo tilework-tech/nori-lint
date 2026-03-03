@@ -20,7 +20,6 @@ import { lineCountRule } from "@/rules/line-count.js";
 import { cliCommandIndexRule } from "@/rules/llm-rules/cli-command-index.js";
 import { duplicateSectionRule } from "@/rules/llm-rules/duplicate-section.js";
 import { firstPersonRule } from "@/rules/llm-rules/first-person.js";
-import { missingExamplesRule } from "@/rules/llm-rules/missing-examples.js";
 import { negativeWithoutPositiveRule } from "@/rules/llm-rules/negative-without-positive.js";
 import { obviousInstructionsRule } from "@/rules/llm-rules/obvious-instructions.js";
 import { processNotIntegrationRule } from "@/rules/llm-rules/process-not-integration.js";
@@ -63,7 +62,6 @@ function defaultLlmRegistry(): LlmRegistry {
   registry.register(cliCommandIndexRule);
   registry.register(duplicateSectionRule);
   registry.register(firstPersonRule);
-  registry.register(missingExamplesRule);
   registry.register(negativeWithoutPositiveRule);
   registry.register(obviousInstructionsRule);
   registry.register(processNotIntegrationRule);

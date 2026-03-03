@@ -31,6 +31,5 @@ Path: @/src/rules/llm-rules
 - The `has_violations` check happens in `@/src/cli.ts` before `evaluate()` is called. The CLI gates on `response.has_violations && response.violations.length > 0`.
 - System prompts include explicit carve-outs for content that should NOT be flagged to reduce false positives.
 - System prompts instruct the LLM on how to use the `text` and `reason` fields semantically -- different rules interpret these fields differently (e.g., `first_person` uses `text` for the offending passage and `reason` for the corrected version).
-- The `missing_examples` rule checks whether a skill file contains behavioral guidance (style guidance, format conventions, quality criteria) that would benefit from `<good-example>` / `<bad-example>` blocks but currently lacks them. Its system prompt includes explicit carve-outs for procedural steps with specific commands, references to other skills, simple boolean checks, and content that already has example blocks nearby.
 
 Created and maintained by Nori.
