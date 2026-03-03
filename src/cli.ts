@@ -13,6 +13,8 @@ import { LlmRegistry } from "@/llm-registry.js";
 import { Registry } from "@/registry.js";
 import { boldItalicsRule } from "@/rules/bold-italics.js";
 import { descriptionActionRule } from "@/rules/description-action.js";
+import { frontmatterNameFormatRule } from "@/rules/frontmatter-name-format.js";
+import { frontmatterRule } from "@/rules/frontmatter.js";
 import { lineCountRule } from "@/rules/line-count.js";
 import { cliCommandIndexRule } from "@/rules/llm-rules/cli-command-index.js";
 import { duplicateSectionRule } from "@/rules/llm-rules/duplicate-section.js";
@@ -38,6 +40,8 @@ function defaultRegistry(): Registry {
   const registry = new Registry();
   registry.register(boldItalicsRule);
   registry.register(descriptionActionRule);
+  registry.register(frontmatterRule);
+  registry.register(frontmatterNameFormatRule);
   registry.register(lineCountRule);
   registry.register(markdownLinksRule);
   registry.register(redundantTitleRule);

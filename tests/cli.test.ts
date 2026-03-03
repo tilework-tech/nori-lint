@@ -39,25 +39,25 @@ const withArgs = async (
 };
 
 const smallSkillContent = () =>
-  "---\nname: Test Skill\ndescription: Use when testing the linter\n---\n\n<required>\nSome content.\n</required>\n";
+  "---\nname: test-skill\ndescription: Use when testing the linter\n---\n\n<required>\nSome content.\n</required>\n";
 
 const largeSkillContent = () =>
   Array.from({ length: 200 }, (_, i) => `line ${i + 1}`).join("\n");
 
 const skillWithBoldText = () =>
-  "---\nname: Test Skill\ndescription: Use when testing bold text handling\n---\n\n<required>\nSome **bold** content.\n</required>\n";
+  "---\nname: test-skill\ndescription: Use when testing bold text handling\n---\n\n<required>\nSome **bold** content.\n</required>\n";
 
 const skillWithoutRequiredTags = () =>
-  "---\nname: Test Skill\ndescription: Use when testing required tags\n---\n\nSome content without required tags.\n";
+  "---\nname: test-skill\ndescription: Use when testing required tags\n---\n\nSome content without required tags.\n";
 
 const skillWithUnclosedTag = () =>
-  "---\nname: Test Skill\ndescription: Use when testing unclosed tags\n---\n\n<required>\nSome content.\n";
+  "---\nname: test-skill\ndescription: Use when testing unclosed tags\n---\n\n<required>\nSome content.\n";
 
 const skillWithRedundantTitle = () =>
-  "---\nname: Test Skill\ndescription: Use when testing redundant titles\n---\n\n# The Test Skill\n\n<required>\nSome content.\n</required>\n";
+  "---\nname: test-skill\ndescription: Use when testing redundant titles\n---\n\n# The Test Skill\n\n<required>\nSome content.\n</required>\n";
 
 const skillWithMarkdownLink = () =>
-  "---\nname: Test Skill\ndescription: Use when testing markdown link handling\n---\n\n<required>\nSee [the docs](https://example.com) for details.\n</required>\n";
+  "---\nname: test-skill\ndescription: Use when testing markdown link handling\n---\n\n<required>\nSee [the docs](https://example.com) for details.\n</required>\n";
 
 const validConfigWithDisabledRules = (disabled: Array<string>) =>
   JSON.stringify({ anthropic_api_key: "sk-ant-fake-key", rules: { disabled } });
@@ -465,7 +465,7 @@ describe("CLI integration tests", () => {
       const skillDir = path.join(dir, "my-skill");
       fs.mkdirSync(skillDir);
       const content =
-        "---\nname: Test Skill\ndescription: Use when testing the linter\n---\n\nSome **bold** content without required tags.\n";
+        "---\nname: test-skill\ndescription: Use when testing the linter\n---\n\nSome **bold** content without required tags.\n";
       fs.writeFileSync(path.join(skillDir, "SKILL.md"), content);
 
       const { stdout } = await withArgs([
@@ -641,7 +641,7 @@ describe("CLI integration tests", () => {
       fs.mkdirSync(skillDir);
       const skillPath = path.join(skillDir, "SKILL.md");
       const content =
-        '---\nname: Test Skill\ndescription: Use when testing the linter\n---\n\n<required>\nSome **bold** text outside code block.\n\n```bash\ngit push -u origin [feature-branch]\ngh pr create --title "[title]" --body "$(cat <<\'EOF\'\n## Summary\n🤖 Generated with [Nori](https://www.npmjs.com/package/nori-ai)\nEOF\n)"\n```\n</required>\n';
+        '---\nname: test-skill\ndescription: Use when testing the linter\n---\n\n<required>\nSome **bold** text outside code block.\n\n```bash\ngit push -u origin [feature-branch]\ngh pr create --title "[title]" --body "$(cat <<\'EOF\'\n## Summary\n🤖 Generated with [Nori](https://www.npmjs.com/package/nori-ai)\nEOF\n)"\n```\n</required>\n';
       fs.writeFileSync(skillPath, content);
 
       await withArgs(["fix", dir]);
