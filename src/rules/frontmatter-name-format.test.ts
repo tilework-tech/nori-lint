@@ -100,4 +100,12 @@ describe("frontmatter_name_format rule", () => {
     const result = frontmatterNameFormatRule.run(content);
     expect(result).toEqual([]);
   });
+
+  test('has correct name "frontmatter_name_format"', () => {
+    expect(frontmatterNameFormatRule.name).toBe("frontmatter_name_format");
+  });
+
+  test("has non-empty description", () => {
+    expect(frontmatterNameFormatRule.description.length).toBeGreaterThan(0);
+  });
 });

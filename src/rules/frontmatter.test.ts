@@ -144,4 +144,26 @@ describe("frontmatter rule", () => {
     const result = frontmatterRule.run(content);
     expect(result.length).toBeGreaterThan(0);
   });
+
+  test("returns violation when name is a number", () => {
+    const content = "---\nname: 123\ndescription: Does things.\n---\n\nBody.";
+    const result = frontmatterRule.run(content);
+    expect(result.length).toBeGreaterThan(0);
+    expect(result[0].message).toContain("name");
+  });
+
+  test("returns violation when description is a number", () => {
+    const content = "---\nname: my-skill\ndescription: 42\n---\n\nBody.";
+    const result = frontmatterRule.run(content);
+    expect(result.length).toBeGreaterThan(0);
+    expect(result[0].message).toContain("description");
+  });
+
+  test('has correct name "frontmatter"', () => {
+    expect(frontmatterRule.name).toBe("frontmatter");
+  });
+
+  test("has non-empty description", () => {
+    expect(frontmatterRule.description.length).toBeGreaterThan(0);
+  });
 });
