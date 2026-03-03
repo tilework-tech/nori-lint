@@ -17,9 +17,9 @@ You can disable any rule you disagree with via configuration.
 
 nori-lint is part of a broader set of tools for building and managing AI agent configurations:
 
-- [Nori Skillsets](https://noriskillsets.com) — Registry and CLI for downloading, publishing, and switching between packaged sets of AI agent skills.
+- [Nori Skillsets](https://noriskillsets.com) — Registry and CLI for downloading, publishing, and switching between packaged sets of AI agent skills. Supports automatic skill generation from coding sessions and private team registries.
 - [Nori Sessions](https://norisessions.com) — Managed agent runtime platform for running AI coding agents in cloud environments with security, persistence, and integrations.
-- [Nori](https://usenori.ai) — The homepage for the Nori platform, which automatically generates reusable AI agent skills from engineering work patterns.
+- [Nori](https://usenori.ai) — Homepage.
 
 ## Installation
 
