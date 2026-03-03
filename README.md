@@ -80,10 +80,15 @@ These run without any API key. They are fast, deterministic, and pattern-based.
 | Rule | Fixable | Description |
 |---|---|---|
 | `bold_italics` | Yes | Bold/italic markdown formatting wastes tokens for an LLM reader. |
+| `consecutive_blank_lines` | Yes | Multiple consecutive blank lines waste tokens. |
+| `description_action` | No | Frontmatter `description` must start with "Use " — skills should say when to use them, not what they do. |
+| `frontmatter` | No | YAML frontmatter must have valid structure and required `name`/`description` fields per the agentskills.io spec. |
+| `frontmatter_name_format` | No | Frontmatter `name` must be lowercase alphanumeric with hyphens per the agentskills.io naming convention. |
 | `line_count` | No | Files must not exceed 150 lines. |
 | `markdown_links` | Yes | Use bare URLs instead of `[text](url)` markdown link syntax. |
 | `redundant_title` | Yes | Title headings are redundant — the filename and frontmatter already identify the skill. |
 | `required_tags` | No | Every skill must contain at least one `<required>` block. |
+| `trailing_whitespace` | Yes | Trailing whitespace wastes tokens. |
 | `unclosed_tags` | No | All opened XML-style tags must have matching closing tags. |
 
 ### LLM rules
@@ -99,6 +104,7 @@ These call the Anthropic API for semantic analysis. They only run when a config 
 | `obvious_instructions` | Flags generic instructions any LLM already follows ("write clean code", "handle errors"). |
 | `process_not_integration` | Skills should be step-by-step workflows, not reference manuals. |
 | `redundant_explanation` | Flags explanations of concepts an LLM already knows. |
+| `skill_example_xml_tags` | Behavioral examples should be wrapped in `<good_example>` or `<bad_example>` tags. |
 | `unexplained_url` | URLs must have surrounding context explaining what they link to and why. |
 
 ## Configuration
