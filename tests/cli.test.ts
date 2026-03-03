@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -878,6 +879,34 @@ describe("CLI integration tests", () => {
       const { code, stdout } = await withArgs(["list", "--help"]);
       expect(code).toBe(0);
       expect(stdout).toContain("Usage");
+    });
+  });
+
+  describe("entry point - symlink invocation", () => {
+    const cliPath = path.resolve("build/src/cli.js");
+    const hasBuild = fs.existsSync(cliPath);
+
+    test.skipIf(!hasBuild)("produces output when invoked via a symlink", () => {
+      const tmpDir = makeTempDir();
+      tempDirs.push(tmpDir);
+      const symlinkPath = path.join(tmpDir, "nori-lint");
+      fs.symlinkSync(cliPath, symlinkPath);
+
+      const stdout = execFileSync(process.execPath, [symlinkPath, "list"], {
+        encoding: "utf-8",
+        timeout: 10000,
+      });
+
+      expect(stdout).toContain("bold_italics");
+    });
+
+    test.skipIf(!hasBuild)("produces output when invoked directly", () => {
+      const stdout = execFileSync(process.execPath, [cliPath, "list"], {
+        encoding: "utf-8",
+        timeout: 10000,
+      });
+
+      expect(stdout).toContain("bold_italics");
     });
   });
 });

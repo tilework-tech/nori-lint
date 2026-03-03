@@ -2,6 +2,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { Command } from "commander";
 import { globSync } from "glob";
@@ -529,7 +530,15 @@ export const run = async (): Promise<number> => {
   return exitCode;
 };
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const __filename = fileURLToPath(import.meta.url);
+const isMainModule = (() => {
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(__filename);
+  } catch {
+    return false;
+  }
+})();
+if (isMainModule) {
   run().then((code) => {
     process.exit(code);
   });
