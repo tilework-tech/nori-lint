@@ -23,6 +23,7 @@ import { negativeWithoutPositiveRule } from "@/rules/llm-rules/negative-without-
 import { obviousInstructionsRule } from "@/rules/llm-rules/obvious-instructions.js";
 import { processNotIntegrationRule } from "@/rules/llm-rules/process-not-integration.js";
 import { redundantExplanationRule } from "@/rules/llm-rules/redundant-explanation.js";
+import { skillExampleXmlTagsRule } from "@/rules/llm-rules/skill-example-xml-tags.js";
 import { unexplainedUrlRule } from "@/rules/llm-rules/unexplained-url.js";
 import { markdownLinksRule } from "@/rules/markdown-links.js";
 import { redundantTitleRule } from "@/rules/redundant-title.js";
@@ -62,6 +63,7 @@ function defaultLlmRegistry(): LlmRegistry {
   registry.register(obviousInstructionsRule);
   registry.register(processNotIntegrationRule);
   registry.register(redundantExplanationRule);
+  registry.register(skillExampleXmlTagsRule);
   registry.register(unexplainedUrlRule);
   return registry;
 }
