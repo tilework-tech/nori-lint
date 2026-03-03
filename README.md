@@ -30,12 +30,14 @@ If you are struggling to adopt AI or are feeling AI FOMO, get in touch!
 Requires Node.js 22+.
 
 ```bash
-npm install
-npm run build
-npm link
+npm install -g nori-lint
 ```
 
-This makes the `nori-lint` command available globally.
+Or run directly without installing:
+
+```bash
+npx nori-lint lint .
+```
 
 ## Usage
 
@@ -64,6 +66,8 @@ nori-lint fix [path] [options]
 
 Auto-fixes violations in place. Deterministic rules are fixed directly. LLM rule violations are batched into a single API call per file.
 
+**Note:** When LLM rules are active, the `fix` command is non-deterministic — running it twice on the same file may produce different results. Static rule fixes are always deterministic.
+
 | Option | Default | Description |
 |---|---|---|
 | `--config <path>` | — | Path to config file |
@@ -80,10 +84,15 @@ These run without any API key. They are fast, deterministic, and pattern-based.
 | Rule | Fixable | Description |
 |---|---|---|
 | `bold_italics` | Yes | Bold/italic markdown formatting wastes tokens for an LLM reader. |
+| `consecutive_blank_lines` | Yes | Multiple consecutive blank lines waste tokens. |
+| `description_action` | No | Description must indicate when to use the skill, not what it does. |
+| `frontmatter` | No | Valid YAML frontmatter with required fields per the agentskills.io spec. |
+| `frontmatter_name_format` | No | Name must be lowercase alphanumeric with hyphens. |
 | `line_count` | No | Files must not exceed 150 lines. |
 | `markdown_links` | Yes | Use bare URLs instead of `[text](url)` markdown link syntax. |
 | `redundant_title` | Yes | Title headings are redundant — the filename and frontmatter already identify the skill. |
 | `required_tags` | No | Every skill must contain at least one `<required>` block. |
+| `trailing_whitespace` | Yes | Trailing whitespace on lines wastes tokens. |
 | `unclosed_tags` | No | All opened XML-style tags must have matching closing tags. |
 
 ### LLM rules
@@ -99,6 +108,7 @@ These call the Anthropic API for semantic analysis. They only run when a config 
 | `obvious_instructions` | Flags generic instructions any LLM already follows ("write clean code", "handle errors"). |
 | `process_not_integration` | Skills should be step-by-step workflows, not reference manuals. |
 | `redundant_explanation` | Flags explanations of concepts an LLM already knows. |
+| `skill_example_xml_tags` | Behavioral examples must use `<good_example>`/`<bad_example>` tags. |
 | `unexplained_url` | URLs must have surrounding context explaining what they link to and why. |
 
 ## Configuration
