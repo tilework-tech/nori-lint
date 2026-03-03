@@ -884,8 +884,9 @@ describe("CLI integration tests", () => {
 
   describe("entry point - symlink invocation", () => {
     const cliPath = path.resolve("build/src/cli.js");
+    const hasBuild = fs.existsSync(cliPath);
 
-    test("produces output when invoked via a symlink", () => {
+    test.skipIf(!hasBuild)("produces output when invoked via a symlink", () => {
       const tmpDir = makeTempDir();
       tempDirs.push(tmpDir);
       const symlinkPath = path.join(tmpDir, "nori-lint");
@@ -899,7 +900,7 @@ describe("CLI integration tests", () => {
       expect(stdout).toContain("bold_italics");
     });
 
-    test("produces output when invoked directly", () => {
+    test.skipIf(!hasBuild)("produces output when invoked directly", () => {
       const stdout = execFileSync(process.execPath, [cliPath, "list"], {
         encoding: "utf-8",
         timeout: 10000,

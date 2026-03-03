@@ -531,7 +531,14 @@ export const run = async (): Promise<number> => {
 };
 
 const __filename = fileURLToPath(import.meta.url);
-if (fs.realpathSync(process.argv[1]) === fs.realpathSync(__filename)) {
+const isMainModule = (() => {
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(__filename);
+  } catch {
+    return false;
+  }
+})();
+if (isMainModule) {
   run().then((code) => {
     process.exit(code);
   });
