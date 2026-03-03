@@ -12,6 +12,7 @@ import { AnthropicClient } from "@/llm-client.js";
 import { LlmRegistry } from "@/llm-registry.js";
 import { Registry } from "@/registry.js";
 import { boldItalicsRule } from "@/rules/bold-italics.js";
+import { descriptionActionRule } from "@/rules/description-action.js";
 import { frontmatterNameFormatRule } from "@/rules/frontmatter-name-format.js";
 import { frontmatterRule } from "@/rules/frontmatter.js";
 import { lineCountRule } from "@/rules/line-count.js";
@@ -38,6 +39,7 @@ import type { LlmAnalyzer, LlmFixViolation } from "@/llm-client.js";
 function defaultRegistry(): Registry {
   const registry = new Registry();
   registry.register(boldItalicsRule);
+  registry.register(descriptionActionRule);
   registry.register(frontmatterRule);
   registry.register(frontmatterNameFormatRule);
   registry.register(lineCountRule);
