@@ -2,11 +2,13 @@
 
 > This README was AI-generated.
 
-An opinionated linter for `SKILL.md` files — the configuration files that define AI agent behavior in the [Nori](https://usenori.ai) ecosystem.
+An opinionated linter for `SKILL.md` files — follow best practices, don't configure slop.
 
 ## Why opinionated?
 
-SKILL.md files are prompt-engineered instructions consumed by LLMs. Every wasted word burns context window space in every agent session. nori-lint enforces two principles:
+SKILL.md files are prompt-engineered instructions consumed by LLMs. Most LLMs will write verbose slop skills that do not work. Every wasted word burns context window space in every agent session, degrading agent ability and costing you money.
+
+nori-lint enforces two principles:
 
 - **Token efficiency:** Don't waste tokens on things the LLM already knows (redundant explanations, obvious instructions, markdown formatting it doesn't render).
 - **Structural discipline:** Skills should be concise processes with required checklists, not sprawling reference manuals.
@@ -17,9 +19,11 @@ You can disable any rule you disagree with via configuration.
 
 nori-lint is part of a broader set of tools for building and managing AI agent configurations:
 
-- [Nori Skillsets](https://noriskillsets.com) — Registry and CLI for downloading, publishing, and switching between packaged sets of AI agent skills. Supports automatic skill generation from coding sessions and private team registries.
-- [Nori Sessions](https://norisessions.com) — Managed agent runtime platform for running AI coding agents in cloud environments with security, persistence, and integrations.
+- [Nori Skillsets](https://noriskillsets.com) — Registry and CLI for downloading, publishing, and switching between packaged sets of AI agent skills. Teams can get private registries, which also support automatic skill generation from coding session transcripts.
+- [Nori Sessions](https://norisessions.com) — Managed agent runtime platform for running AI coding agents in cloud environments with security, persistence, and integrations. Like Stripe or Ramp, but off the shelf and personalized to your org.
 - [Nori](https://usenori.ai) — Homepage.
+
+If you are struggling to adopt AI or are feeling AI FOMO, get in touch!
 
 ## Installation
 
