@@ -459,6 +459,57 @@ export const run = async (): Promise<number> => {
       },
     );
 
+  program
+    .command("list")
+    .description("List all available lint rules")
+    .option("--format <format>", "Output format (text or json)", "text")
+    .action((opts: { format: string }) => {
+      const format = opts.format;
+
+      if (format !== "text" && format !== "json") {
+        process.stderr.write(
+          `error: invalid format '${format}'. Must be 'text' or 'json'\n`,
+        );
+        exitCode = 1;
+        return;
+      }
+
+      const registry = defaultRegistry();
+      const llmRegistry = defaultLlmRegistry();
+
+      const rules = [
+        ...registry.rules.map((r) => ({
+          name: r.name,
+          description: r.description,
+          type: "deterministic" as const,
+          fixable: typeof r.fix === "function",
+        })),
+        ...llmRegistry.rules.map((r) => ({
+          name: r.name,
+          description: r.description,
+          type: "llm" as const,
+          fixable: true,
+        })),
+      ];
+
+      if (format === "json") {
+        process.stdout.write(JSON.stringify(rules));
+      } else {
+        for (const rule of rules) {
+          const tags = [
+            rule.type === "llm" ? "[llm]" : null,
+            rule.fixable ? "[fixable]" : null,
+          ]
+            .filter(Boolean)
+            .join(" ");
+          const suffix = tags ? ` ${tags}` : "";
+          process.stdout.write(
+            `${rule.name}${suffix}\n  ${rule.description}\n`,
+          );
+        }
+      }
+    });
+
   try {
     const args = process.argv.slice(2);
     if (args.length === 0) {

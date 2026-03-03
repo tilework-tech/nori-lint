@@ -7,7 +7,7 @@ Path: @/
 - TypeScript CLI tool that lints and auto-fixes SKILL.md files (AI agent skill configuration files)
 - Uses a two-tier rule system: synchronous deterministic rules (`Rule` type) and async LLM-based rules (`LlmRule` type) that call the Anthropic Messages API for subjective analysis
 - LLM rules execute concurrently via `Promise.all`, reducing wall-clock time to roughly the duration of the slowest single API call
-- Two subcommands: `lint` (report violations with `--format text|json`) and `fix` (auto-fix violations with `--dry-run` support)
+- Three subcommands: `lint` (report violations with `--format text|json`), `fix` (auto-fix violations with `--dry-run` support), and `list` (display all available rules with metadata)
 
 ### How it fits into the larger codebase
 
@@ -18,7 +18,7 @@ Path: @/
 
 ### Core Implementation
 
-- **Entry point:** `@/src/cli.ts` uses `commander` with a subcommand pattern for CLI parsing, `glob` for file discovery, and native `fetch` for HTTP. Running `nori-lint` with no arguments shows help; `nori-lint lint [path]` reports violations; `nori-lint fix [path]` auto-fixes them. The `run()` function is the async entry point. It self-invokes when run directly via `import.meta.url` check.
+- **Entry point:** `@/src/cli.ts` uses `commander` with a subcommand pattern for CLI parsing, `glob` for file discovery, and native `fetch` for HTTP. Running `nori-lint` with no arguments shows help; `nori-lint lint [path]` reports violations; `nori-lint fix [path]` auto-fixes them; `nori-lint list` displays all registered rules. The `run()` function is the async entry point. It self-invokes when run directly via `import.meta.url` check.
 - **Two-tier rule system:** Deterministic rules conform to the `Rule` type (in `@/src/rules/index.ts`) and are registered into `Registry` (in `@/src/registry.ts`). LLM rules conform to the `LlmRule` type (in `@/src/rules/llm-rules/index.ts`) and are registered into `LlmRegistry` (in `@/src/llm-registry.ts`). Both produce `RuleViolation` structs from `@/src/diagnostic.ts`.
 - **Deterministic fix support:** The `Rule` type has an optional `fix` method. Rules that implement `fix` can auto-correct violations (e.g., `bold_italics`, `markdown_links`, `redundant_title`). Rules without `fix` (e.g., `description_action`, `frontmatter`, `frontmatter_name_format`, `line_count`, `required_tags`, `unclosed_tags`) are reported as unfixable during `nori-lint fix`.
 - **LLM fix support:** When a config is present, the `fix` subcommand collects LLM rule violations, then calls `LlmAnalyzer.fixContent()` with all violations batched into a single LLM API call per file. Protection of code blocks, URLs, and uncited content from unwanted modification is handled entirely via the `fixContent()` system prompt in `@/src/llm-client.ts`, which explicitly forbids the LLM from touching fenced code blocks, URLs, or any lines not cited in a violation. The LLM returns the corrected file content via a `apply_fixes` tool_use response.
@@ -30,7 +30,7 @@ Path: @/
 
 ### Things to Know
 
-- CLI uses a subcommand pattern: `nori-lint lint [path]` reports violations (`--format text|json`, `--config <path>`); `nori-lint fix [path]` auto-fixes violations (`--dry-run`, `--config <path>`). Running `nori-lint` with no arguments shows help and exits 0.
+- CLI uses a subcommand pattern: `nori-lint lint [path]` reports violations (`--format text|json`, `--config <path>`); `nori-lint fix [path]` auto-fixes violations (`--dry-run`, `--config <path>`); `nori-lint list` shows all registered rules (`--format text|json`). Running `nori-lint` with no arguments shows help and exits 0.
 - Config auto-discovery: if no `--config` flag is passed, the CLI checks for `.nori-lint.json` in the current working directory. If not found, only deterministic rules run.
 - `.nori-lint.json` is gitignored to prevent committing API keys.
 - Rule filtering semantics: `rules.enabled` is an allowlist, `rules.disabled` is a denylist, specifying both is a validation error. When no `rules` field exists, all rules run.
@@ -42,38 +42,37 @@ Path: @/
 - Runtime dependencies: `commander` (CLI parsing), `glob` (file discovery), `yaml` (YAML parsing for frontmatter validation). All other functionality uses Node built-ins.
 
 ```
-                        cli.ts
-                           |
-                       run() async
-                           |
-              commander.parseAsync()  ── --help (exit 0)
-                           |
-                  no args? ── outputHelp() (exit 0)
-                           |
-                    setupCommand()
-                  /        |        \
-          Registry    resolveConfig()  globSync("**/SKILL.md")
-         /                 |
-  [Rule, Rule, ...]   Config (optional)
-                         |       \
-                         |    rules: {enabled|disabled}
-                         |         |
-                         |    isRuleEnabled() filter
-                         |   /
-                    AnthropicClient + LlmRegistry
-                             |
-                 +-----------+-----------+
-                 |                       |
-            lint subcommand         fix subcommand
-                 |                       |
-     per file: run rules        per file: run + fix rules
-     collect diagnostics        deterministic: rule.fix()
-     format (text/json)         LLM: batch violations ->
-                |                 llmClient.fixContent(content)
-                |                       |
-                |               write file or --dry-run
-                |                       |
-           exit(0 or 1)           exit(0 or 1)
+                         cli.ts
+                            |
+                        run() async
+                            |
+               commander.parseAsync()  ── --help (exit 0)
+                            |
+                   no args? ── outputHelp() (exit 0)
+                            |
+             +--------------+--------------+
+             |              |              |
+         lint / fix         |          list
+             |              |              |
+       setupCommand()       |     defaultRegistry() +
+       /     |     \        |     defaultLlmRegistry()
+ Registry    |  globSync()  |              |
+       resolveConfig()      |       format (text/json)
+             |              |              |
+       Config (optional)    |         exit(0|1)
+        /         \         |
+  isRuleEnabled()  \        |
+  AnthropicClient   \       |
+             |       |      |
+       +-----+------+      |
+       |             |      |
+     lint          fix      |
+       |             |      |
+  run rules     run + fix   |
+  diagnostics   rule.fix()  |
+  text/json     fixContent()|
+       |        --dry-run   |
+  exit(0|1)    exit(0|1)    |
 ```
 
 Created and maintained by Nori.
