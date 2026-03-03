@@ -4,6 +4,9 @@
   "description": "Lint SKILL.md files for common issues",
   "license": "Apache-2.0",
   "type": "module",
+  "files": [
+    "build"
+  ],
   "bin": {
     "nori-lint": "./build/src/cli.js"
   },
