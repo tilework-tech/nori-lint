@@ -12,6 +12,7 @@ import { AnthropicClient } from "@/llm-client.js";
 import { LlmRegistry } from "@/llm-registry.js";
 import { Registry } from "@/registry.js";
 import { boldItalicsRule } from "@/rules/bold-italics.js";
+import { descriptionActionRule } from "@/rules/description-action.js";
 import { lineCountRule } from "@/rules/line-count.js";
 import { cliCommandIndexRule } from "@/rules/llm-rules/cli-command-index.js";
 import { duplicateSectionRule } from "@/rules/llm-rules/duplicate-section.js";
@@ -36,6 +37,7 @@ import type { LlmAnalyzer, LlmFixViolation } from "@/llm-client.js";
 function defaultRegistry(): Registry {
   const registry = new Registry();
   registry.register(boldItalicsRule);
+  registry.register(descriptionActionRule);
   registry.register(lineCountRule);
   registry.register(markdownLinksRule);
   registry.register(redundantTitleRule);

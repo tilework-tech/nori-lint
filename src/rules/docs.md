@@ -18,7 +18,7 @@ Path: @/src/rules
 ### Core Implementation
 
 - **`index.ts`** -- Defines the `Rule` type: an object with `name: string`, `description: string`, `run: (input: string) => Array<RuleViolation>`, and an optional `fix?: (input: string) => string` for auto-fixing.
-- **Deterministic rules** -- Exported as constant objects conforming to `Rule`. Each receives full file content as a string and returns an array of violations. Rules that implement `fix` can auto-correct violations: `bold_italics` (strips bold/italic markdown formatting), `markdown_links` (replaces `[text](url)` with bare URLs), and `redundant_title` (removes redundant title headings). Rules without `fix` (`line_count`, `required_tags`, `unclosed_tags`) are reported as unfixable during `nori-lint fix`.
+- **Deterministic rules** -- Exported as constant objects conforming to `Rule`. Each receives full file content as a string and returns an array of violations. Rules that implement `fix` can auto-correct violations: `bold_italics` (strips bold/italic markdown formatting), `markdown_links` (replaces `[text](url)` with bare URLs), and `redundant_title` (removes redundant title headings). Rules without `fix` (`description_action`, `line_count`, `required_tags`, `unclosed_tags`) are reported as unfixable during `nori-lint fix`.
 - **`llm-rules/`** -- Submodule containing the `LlmRule` type and LLM-powered rule implementations. See `@/src/rules/llm-rules/docs.md`.
 
 ### Things to Know
@@ -28,5 +28,6 @@ Path: @/src/rules
 - `Rule.fix()` operates on the full file content, not individual violations. During `nori-lint fix`, the CLI calls `rule.run()` first to detect violations, then `rule.fix()` if present. The fix functions preserve content inside code blocks and inline code spans.
 - The `markdown_links` rule tracks `inExampleBlock` state to skip content inside XML example tags (`<good-example>`, `<bad-example>`, `<good_example>`, `<bad_example>`). This pattern is not used by other deterministic rules.
 - Both `bold_italics` and `markdown_links` use independent copies of a `stripInlineCode()` helper to replace inline code spans with spaces before scanning.
+- The `description_action` rule parses YAML frontmatter manually (not via a YAML library) to extract the `description:` field. It strips surrounding quotes (single or double) before checking whether the value starts with "Use " (case-insensitive). It has no `fix` method because rephrasing a description to indicate *when* to use a skill requires human judgment.
 
 Created and maintained by Nori.
