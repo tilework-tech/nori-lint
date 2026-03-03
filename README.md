@@ -1,5 +1,7 @@
 # nori-lint
 
+> This README was AI-generated.
+
 An opinionated linter for `SKILL.md` files — follow best practices, don't configure slop.
 
 ## Why opinionated?
