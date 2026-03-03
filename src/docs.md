@@ -9,7 +9,7 @@ Path: @/src
 
 ### How it fits into the larger codebase
 
-- `cli.ts` is the entry point compiled into the `nori-lint` binary via the `bin` field in `@/package.json`; it self-invokes via an `import.meta.url` check
+- `cli.ts` is the entry point compiled into the `nori-lint` binary via the `bin` field in `@/package.json`; it self-invokes via a realpath-based entry point guard that resolves symlinks before comparing `process.argv[1]` against `import.meta.url`
 - Integration tests in `@/tests/cli.test.ts` exercise `run()` directly by stubbing `process.argv`, `process.stdout.write`, and `process.stderr.write`
 - Unit tests live alongside production code as `.test.ts` files (e.g., `config.test.ts`, `registry.test.ts`)
 
@@ -24,7 +24,7 @@ Path: @/src
 
 ### Things to Know
 
-- `run()` returns a numeric exit code rather than calling `process.exit()` directly, enabling testability. The `import.meta.url` guard at the bottom calls `process.exit()` only when run as a script.
+- `run()` returns a numeric exit code rather than calling `process.exit()` directly, enabling testability. The entry point guard at the bottom uses `fs.realpathSync()` to resolve both `process.argv[1]` and the module's own filename (via `fileURLToPath(import.meta.url)`) before comparing them, so that the CLI works correctly when invoked through npm-created symlinks.
 - `resolveConfig()` in `cli.ts` implements a two-step lookup: explicit `--config` path first, then `.nori-lint.json` in CWD. If neither exists, `null` is returned and LLM rules are skipped.
 - Rule filtering happens at the execution loop in `cli.ts`, not inside the registries. Both `Registry` and `LlmRegistry` always hold all registered rules.
 - The unknown rule name warning in `cli.ts` dynamically builds the known-rules list from both registries.

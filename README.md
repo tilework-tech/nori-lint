@@ -27,7 +27,7 @@ If you are struggling to adopt AI or are feeling AI FOMO, get in touch!
 
 ## Installation
 
-Requires Node.js 22+.
+Requires Node.js 20+.
 
 ```bash
 npm install -g nori-lint

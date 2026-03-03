@@ -19,7 +19,8 @@ Path: @/tests
 - `cli.test.ts` uses `fs.mkdtempSync()` to create isolated filesystem environments, writes SKILL.md files with known content, then calls `run()` with stubbed `process.argv`
 - A `withArgs()` helper stubs `process.argv`, captures stdout/stderr, and returns `{ code, stdout, stderr }`
 - Helper functions create SKILL.md fixtures targeting specific rule behaviors
-- Tests are organized into groups covering: default behavior (no subcommand shows help), lint subcommand (basic behavior, directory argument handling, `--format text`/`--format json` output, `--help`, per-rule violation detection, `--config` behavior, rules config enable/disable, `.nori-lint.json` auto-discovery, unknown rule warnings), fix subcommand (applying deterministic fixes, unfixable rule reporting, code block content preservation during fix, `--dry-run` mode, `--config` interactions), and list subcommand (text format output with all rule names/descriptions/tags, JSON format output with structured rule metadata, invalid format error handling, `--help`)
+- Tests are organized into groups covering: default behavior (no subcommand shows help), lint subcommand (basic behavior, directory argument handling, `--format text`/`--format json` output, `--help`, per-rule violation detection, `--config` behavior, rules config enable/disable, `.nori-lint.json` auto-discovery, unknown rule warnings), fix subcommand (applying deterministic fixes, unfixable rule reporting, code block content preservation during fix, `--dry-run` mode, `--config` interactions), list subcommand (text format output with all rule names/descriptions/tags, JSON format output with structured rule metadata, invalid format error handling, `--help`), and entry point symlink invocation (subprocess tests that verify the CLI works when invoked via a symlink, as npm does)
+- The `entry point - symlink invocation` tests use `execFileSync` to spawn the built CLI as a real subprocess, unlike all other tests which call `run()` in-process
 
 ### Things to Know
 
@@ -27,5 +28,6 @@ Path: @/tests
 - The auto-discovery test writes a deliberately invalid config to prove the file was loaded
 - Tests that check for a specific rule's violation use `.find()` or `.some()` on the diagnostics array rather than asserting exact array length, since a single file may trigger violations from multiple rules simultaneously
 - Temp directories are cleaned up in `afterEach` to prevent disk accumulation
+- The symlink invocation tests are the only tests that exercise the actual entry point guard in `cli.ts`; they require a prior build (`npm run build`) since they run the compiled output as a subprocess
 
 Created and maintained by Nori.
