@@ -9,7 +9,7 @@ Path: @/tests
 
 ### How it fits into the larger codebase
 
-- Exercises the full end-to-end pipeline for both `lint` and `fix` subcommands: file discovery, rule execution, rule enable/disable filtering, output formatting (text and JSON), directory argument handling, `--help` output, config handling, dry-run mode, and exit codes
+- Exercises the full end-to-end pipeline for all three subcommands (`lint`, `fix`, and `list`): file discovery, rule execution, rule enable/disable filtering, output formatting (text and JSON), directory argument handling, `--help` output, config handling, dry-run mode, rule metadata listing, and exit codes
 - Run via `npm test` (vitest)
 - Unit tests for individual rules and modules live alongside production code in `@/src/` as `.test.ts` files
 - LLM rules are not exercised via real API calls in integration tests; config tests verify config loading, validation, and error reporting behavior
@@ -19,7 +19,7 @@ Path: @/tests
 - `cli.test.ts` uses `fs.mkdtempSync()` to create isolated filesystem environments, writes SKILL.md files with known content, then calls `run()` with stubbed `process.argv`
 - A `withArgs()` helper stubs `process.argv`, captures stdout/stderr, and returns `{ code, stdout, stderr }`
 - Helper functions create SKILL.md fixtures targeting specific rule behaviors
-- Tests are organized into groups covering: default behavior (no subcommand shows help), lint subcommand basic behavior, directory argument handling, `--format text` output, `--format json` output, `--help`, per-rule violation detection, `--config` behavior, rules config enable/disable, `.nori-lint.json` auto-discovery, unknown rule warnings, fix subcommand basic behavior (applying deterministic fixes, unfixable rule reporting, code block content preservation during fix), fix `--dry-run` mode, and fix `--config` interactions
+- Tests are organized into groups covering: default behavior (no subcommand shows help), lint subcommand (basic behavior, directory argument handling, `--format text`/`--format json` output, `--help`, per-rule violation detection, `--config` behavior, rules config enable/disable, `.nori-lint.json` auto-discovery, unknown rule warnings), fix subcommand (applying deterministic fixes, unfixable rule reporting, code block content preservation during fix, `--dry-run` mode, `--config` interactions), and list subcommand (text format output with all rule names/descriptions/tags, JSON format output with structured rule metadata, invalid format error handling, `--help`)
 
 ### Things to Know
 

@@ -784,4 +784,100 @@ describe("CLI integration tests", () => {
       expect(stdout).toContain("Usage");
     });
   });
+
+  describe("list subcommand - text format", () => {
+    test("exits success and outputs all deterministic rule names", async () => {
+      const { code, stdout } = await withArgs(["list"]);
+      expect(code).toBe(0);
+      expect(stdout).toContain("bold_italics");
+      expect(stdout).toContain("line_count");
+      expect(stdout).toContain("required_tags");
+      expect(stdout).toContain("unclosed_tags");
+      expect(stdout).toContain("frontmatter");
+      expect(stdout).toContain("trailing_whitespace");
+      expect(stdout).toContain("consecutive_blank_lines");
+      expect(stdout).toContain("markdown_links");
+      expect(stdout).toContain("redundant_title");
+      expect(stdout).toContain("description_action");
+      expect(stdout).toContain("frontmatter_name_format");
+    });
+
+    test("outputs all LLM rule names", async () => {
+      const { code, stdout } = await withArgs(["list"]);
+      expect(code).toBe(0);
+      expect(stdout).toContain("first_person");
+      expect(stdout).toContain("duplicate_section");
+      expect(stdout).toContain("cli_command_index");
+      expect(stdout).toContain("obvious_instructions");
+      expect(stdout).toContain("unexplained_url");
+      expect(stdout).toContain("negative_without_positive");
+      expect(stdout).toContain("process_not_integration");
+      expect(stdout).toContain("redundant_explanation");
+      expect(stdout).toContain("skill_example_xml_tags");
+    });
+
+    test("distinguishes LLM rules from deterministic rules", async () => {
+      const { code, stdout } = await withArgs(["list"]);
+      expect(code).toBe(0);
+      // LLM rules should be tagged
+      expect(stdout).toContain("[llm]");
+    });
+
+    test("indicates which rules are fixable", async () => {
+      const { code, stdout } = await withArgs(["list"]);
+      expect(code).toBe(0);
+      expect(stdout).toContain("[fixable]");
+    });
+  });
+
+  describe("list subcommand - json format", () => {
+    test("outputs valid JSON array with all rules", async () => {
+      const { code, stdout } = await withArgs(["list", "--format", "json"]);
+      expect(code).toBe(0);
+      const rules = JSON.parse(stdout) as Array<{
+        name: string;
+        description: string;
+        type: string;
+        fixable: boolean;
+      }>;
+      expect(Array.isArray(rules)).toBe(true);
+      // 11 deterministic + 9 LLM = 20 total
+      expect(rules.length).toBe(20);
+    });
+
+    test("each rule has name, description, type, and fixable fields", async () => {
+      const { stdout } = await withArgs(["list", "--format", "json"]);
+      const rules = JSON.parse(stdout) as Array<Record<string, unknown>>;
+      for (const rule of rules) {
+        expect(rule).toHaveProperty("name");
+        expect(rule).toHaveProperty("description");
+        expect(rule).toHaveProperty("type");
+        expect(rule).toHaveProperty("fixable");
+      }
+    });
+
+    test("JSON includes both deterministic and llm rule types", async () => {
+      const { stdout } = await withArgs(["list", "--format", "json"]);
+      const rules = JSON.parse(stdout) as Array<{ type: string }>;
+      const types = new Set(rules.map((r) => r.type));
+      expect(types.has("deterministic")).toBe(true);
+      expect(types.has("llm")).toBe(true);
+    });
+  });
+
+  describe("list subcommand - invalid format", () => {
+    test("invalid format prints error and exits failure", async () => {
+      const { code, stderr } = await withArgs(["list", "--format", "xml"]);
+      expect(code).toBe(1);
+      expect(stderr.toLowerCase()).toContain("format");
+    });
+  });
+
+  describe("list subcommand - --help", () => {
+    test("help flag prints usage and exits success", async () => {
+      const { code, stdout } = await withArgs(["list", "--help"]);
+      expect(code).toBe(0);
+      expect(stdout).toContain("Usage");
+    });
+  });
 });
