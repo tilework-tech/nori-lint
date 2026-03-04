@@ -4,7 +4,7 @@
 
 An opinionated linter for `SKILL.md` files — follow best practices, don't configure slop.
 
-## Why opinionated?
+## Opinionated how?
 
 SKILL.md files are prompt-engineered instructions consumed by LLMs. Most LLMs will write verbose slop skills that do not work. Every wasted word burns context window space in every agent session, degrading agent ability and costing you money.
 
