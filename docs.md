@@ -26,6 +26,7 @@ Path: @/
 - **Concurrent LLM execution:** `runLlmRules()` in `@/src/cli.ts` fires all enabled LLM rules concurrently using `Promise.all`. Progress is printed to stderr before firing requests.
 - **Rule filtering:** The config file supports a `rules` object with mutually exclusive `enabled` (allowlist) and `disabled` (denylist) fields. `isRuleEnabled()` in `@/src/config.ts` provides the filtering logic. Filtering is applied at the execution loop level in `@/src/cli.ts`. Registries always contain all rules regardless of config.
 - **LLM client:** `@/src/llm-client.ts` defines the `LlmAnalyzer` type (async interface with `analyze()` and `fixContent()`) and `AnthropicClient` class. Uses native `fetch` with `AbortSignal.timeout`. The Anthropic tool_use API enforces common JSON schemas for both lint analysis and fix responses.
+- **Build/publish pipeline:** The `prebuild` npm script (`rm -rf build`) cleans the build directory before every build, preventing stale artifacts. The `prepublishOnly` lifecycle hook runs `npm run build && npm test` automatically before `npm publish`, ensuring the published tarball always contains freshly-built output that passes all tests. The build script itself (`@/scripts/build.sh`) runs `tsc`, then `tsc-alias` for path alias resolution, then `chmod +x` on the CLI entry point.
 - **CI pipeline:** `@/.github/workflows/ci.yml` runs linting, testing, and build checks -- see `@/.github/workflows/docs.md`
 
 ### Things to Know
@@ -39,6 +40,7 @@ Path: @/
 - LLM errors are printed to stderr and cause exit code 1, but do not prevent deterministic rule results from being output
 - Uses ESM modules, TypeScript 5.7, Node 22, vitest for testing
 - Path aliases (`@/` -> `src/`) are resolved by `tsc-alias` at build time
+- Stale build protection: `prebuild` clears `build/` before every build, `prepublishOnly` forces a clean build + test before `npm publish`, and CI builds before testing. The npm-pack simulation test in `@/tests/cli.test.ts` provides end-to-end coverage of the distribution pipeline by packing, extracting, installing, symlinking, and running the CLI.
 - Runtime dependencies: `commander` (CLI parsing), `glob` (file discovery), `yaml` (YAML parsing for frontmatter validation). All other functionality uses Node built-ins.
 
 ```

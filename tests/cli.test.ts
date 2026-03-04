@@ -882,10 +882,63 @@ describe("CLI integration tests", () => {
     });
   });
 
-  describe("entry point - symlink invocation", () => {
-    const cliPath = path.resolve("build/src/cli.js");
-    const hasBuild = fs.existsSync(cliPath);
+  const cliPath = path.resolve("build/src/cli.js");
+  const hasBuild = fs.existsSync(cliPath);
 
+  describe("entry point - npm pack simulation", () => {
+    test.skipIf(!hasBuild)(
+      "CLI works after npm pack, extract, and symlink (simulates npm install -g)",
+      () => {
+        const tmpDir = makeTempDir();
+        tempDirs.push(tmpDir);
+
+        // Pack the project (same artifact npm publish uploads)
+        const packOutput = execFileSync(
+          "npm",
+          ["pack", "--pack-destination", tmpDir],
+          {
+            encoding: "utf-8",
+            timeout: 30000,
+          },
+        ).trim();
+        const tarballPath = path.join(
+          tmpDir,
+          packOutput.split("\n").pop()!.trim(),
+        );
+
+        // Extract the tarball (npm install does this)
+        const extractDir = path.join(tmpDir, "extracted");
+        fs.mkdirSync(extractDir);
+        execFileSync("tar", ["xzf", tarballPath, "-C", extractDir], {
+          timeout: 10000,
+        });
+
+        // npm extracts into a "package" subdirectory
+        const packageDir = path.join(extractDir, "package");
+        const entryPoint = path.join(packageDir, "build", "src", "cli.js");
+
+        // Install production dependencies (like npm install -g does)
+        execFileSync("npm", ["install", "--omit=dev"], {
+          cwd: packageDir,
+          timeout: 60000,
+        });
+
+        // Create a symlink (like npm creates in the global bin directory)
+        const symlinkPath = path.join(tmpDir, "nori-lint");
+        fs.symlinkSync(entryPoint, symlinkPath);
+
+        // Run the CLI via the symlink — this is exactly what the user does
+        const stdout = execFileSync(process.execPath, [symlinkPath, "list"], {
+          encoding: "utf-8",
+          timeout: 10000,
+        });
+
+        expect(stdout).toContain("bold_italics");
+      },
+    );
+  });
+
+  describe("entry point - symlink invocation", () => {
     test.skipIf(!hasBuild)("produces output when invoked via a symlink", () => {
       const tmpDir = makeTempDir();
       tempDirs.push(tmpDir);
