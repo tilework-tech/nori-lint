@@ -1,6 +1,6 @@
 {
   "name": "nori-lint",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Lint SKILL.md files for common issues",
   "license": "Apache-2.0",
   "type": "module",
@@ -11,7 +11,9 @@
     "nori-lint": "./build/src/cli.js"
   },
   "scripts": {
+    "prebuild": "rm -rf build",
     "build": "./scripts/build.sh",
+    "prepublishOnly": "npm run build && npm test",
     "watch": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest --watch",
