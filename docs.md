@@ -40,7 +40,7 @@ Path: @/
 - LLM errors are printed to stderr and cause exit code 1, but do not prevent deterministic rule results from being output
 - Uses ESM modules, TypeScript 5.7, Node 22, vitest for testing
 - Path aliases (`@/` -> `src/`) are resolved by `tsc-alias` at build time
-- Stale build protection: `prebuild` clears `build/` before every build, `prepublishOnly` forces a clean build + test before `npm publish`, and CI builds before testing. The npm-pack simulation test in `@/tests/cli.test.ts` provides end-to-end coverage of the distribution pipeline by packing, extracting, installing, symlinking, and running the CLI.
+- Stale build protection: `prebuild` clears `build/` before every build, `prepublishOnly` forces a clean build + test before `npm publish`, and CI builds before testing. The vitest config (`@/vitest.config.ts`) excludes `.worktrees/**` from test discovery to prevent stale or divergent test files in git worktree directories from being picked up during `npm test`. The npm-pack simulation test in `@/tests/cli.test.ts` provides end-to-end coverage of the distribution pipeline by packing, extracting, installing, symlinking, and running the CLI.
 - Runtime dependencies: `commander` (CLI parsing), `glob` (file discovery), `yaml` (YAML parsing for frontmatter validation). All other functionality uses Node built-ins.
 
 ```
