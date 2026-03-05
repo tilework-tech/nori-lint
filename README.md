@@ -1,8 +1,10 @@
 # nori-lint
 
-> This README was AI-generated.
-
 An opinionated linter for `SKILL.md` files — follow best practices, don't configure slop.
+
+```bash
+npx nori-lint lint /path/to/SKILL.md
+```
 
 ## Opinionated how?
 
@@ -33,15 +35,9 @@ Requires Node.js 20+.
 npm install -g nori-lint
 ```
 
-Or run directly without installing:
-
-```bash
-npx nori-lint lint .
-```
-
 ## Usage
 
-Running `nori-lint` with no arguments shows help.
+Running `nori-lint` with no arguments shows help. Use `--version` to print the version.
 
 ### Lint
 
@@ -49,7 +45,7 @@ Running `nori-lint` with no arguments shows help.
 nori-lint lint [path] [options]
 ```
 
-Finds all `SKILL.md` files recursively under `[path]` (defaults to `.`) and reports violations.
+Finds all `SKILL.md` files recursively under `[path]` (defaults to `.`) and reports violations. You can also pass a path to a single file.
 
 | Option | Default | Description |
 |---|---|---|
@@ -73,6 +69,18 @@ Auto-fixes violations in place. Deterministic rules are fixed directly. LLM rule
 | `--config <path>` | — | Path to config file |
 | `--dry-run` | `false` | Show what would change without writing |
 
+### List
+
+```
+nori-lint list [options]
+```
+
+Lists all available lint rules with their descriptions and fixability.
+
+| Option | Default | Description |
+|---|---|---|
+| `--format <format>` | `text` | Output format: `text` or `json` |
+
 ## Rules
 
 nori-lint has a two-tier rule system.
@@ -94,6 +102,7 @@ These run without any API key. They are fast, deterministic, and pattern-based.
 | `required_tags` | No | Every skill must contain at least one `<required>` block. |
 | `trailing_whitespace` | Yes | Trailing whitespace on lines wastes tokens. |
 | `unclosed_tags` | No | All opened XML-style tags must have matching closing tags. |
+| `when_to_use` | Yes | "When to Use" sections are redundant — this belongs in the description frontmatter field. |
 
 ### LLM rules
 
