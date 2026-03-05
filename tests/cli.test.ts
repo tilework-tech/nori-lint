@@ -67,6 +67,7 @@ const validConfigWithEnabledRules = (enabled: Array<string>) =>
   JSON.stringify({ anthropic_api_key: "sk-ant-fake-key", rules: { enabled } });
 
 let tempDirs: Array<string> = [];
+let savedCwd: string;
 
 const createTempDir = (): string => {
   const dir = makeTempDir();
@@ -74,7 +75,17 @@ const createTempDir = (): string => {
   return dir;
 };
 
+beforeEach(() => {
+  savedCwd = process.cwd();
+  // Isolate tests from any .nori-lint.json in the real cwd so that
+  // resolveConfig() auto-discovery never picks up the host config.
+  const isolationDir = makeTempDir();
+  tempDirs.push(isolationDir);
+  process.chdir(isolationDir);
+});
+
 afterEach(() => {
+  process.chdir(savedCwd);
   for (const dir of tempDirs) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -561,15 +572,10 @@ describe("CLI integration tests", () => {
       // Write invalid config to prove it was loaded (should cause error)
       fs.writeFileSync(path.join(dir, ".nori-lint.json"), "not valid json {{{");
 
-      const originalCwd = process.cwd();
-      try {
-        process.chdir(dir);
-        const { code, stderr } = await withArgs(["lint", dir]);
-        expect(code).toBe(1);
-        expect(stderr.length).toBeGreaterThan(0);
-      } finally {
-        process.chdir(originalCwd);
-      }
+      process.chdir(dir);
+      const { code, stderr } = await withArgs(["lint", dir]);
+      expect(code).toBe(1);
+      expect(stderr.length).toBeGreaterThan(0);
     });
   });
 
@@ -896,6 +902,7 @@ describe("CLI integration tests", () => {
           "npm",
           ["pack", "--pack-destination", tmpDir],
           {
+            cwd: savedCwd,
             encoding: "utf-8",
             timeout: 30000,
           },
