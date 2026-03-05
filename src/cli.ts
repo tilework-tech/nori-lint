@@ -9,6 +9,16 @@ import { globSync } from "glob";
 
 import { loadConfig, isRuleEnabled } from "@/config.js";
 import { fromViolation } from "@/diagnostic.js";
+import {
+  formatDiagnostics,
+  formatSummary,
+  formatListRule,
+  formatFixed,
+  formatUnfixable,
+  formatNote,
+  formatWarning,
+  formatError,
+} from "@/formatter.js";
 import { AnthropicClient } from "@/llm-client.js";
 import { LlmRegistry } from "@/llm-registry.js";
 import { Registry } from "@/registry.js";
@@ -129,25 +139,27 @@ function setupCommand(
   try {
     config = resolveConfig(configPath);
   } catch (e) {
-    return { error: `error: ${e instanceof Error ? e.message : e}` };
+    return { error: `${e instanceof Error ? e.message : e}` };
   }
 
   const rootPath = parsedPath;
 
   if (!fs.existsSync(rootPath)) {
-    return { error: `error: ${rootPath} does not exist` };
+    return { error: `${rootPath} does not exist` };
   }
 
   const stat = fs.statSync(rootPath);
   if (!stat.isDirectory()) {
-    return { error: `error: ${rootPath} is not a directory` };
+    return { error: `${rootPath} is not a directory` };
   }
 
   const registry = defaultRegistry();
 
   if (!config) {
     process.stderr.write(
-      "note: skipping LLM rules (no .nori-lint.json found; use --config to specify)\n",
+      formatNote(
+        "skipping LLM rules (no .nori-lint.json found; use --config to specify)",
+      ),
     );
   }
 
@@ -166,7 +178,9 @@ function setupCommand(
       const namesToCheck = config.rules.enabled ?? config.rules.disabled ?? [];
       for (const name of namesToCheck) {
         if (!allKnownRules.includes(name)) {
-          process.stderr.write(`warning: unknown rule '${name}' in config\n`);
+          process.stderr.write(
+            formatWarning(`unknown rule '${name}' in config`),
+          );
         }
       }
     }
@@ -204,7 +218,7 @@ async function runLlmRules(
   if (enabledRules.length === 0) return;
 
   const ruleNames = enabledRules.map((r) => r.name);
-  process.stderr.write(`  checking ${ruleNames.join(", ")}...\n`);
+  process.stderr.write(formatNote(`checking ${ruleNames.join(", ")}...`));
 
   const results = await Promise.all(
     enabledRules.map(async (rule) => {
@@ -224,7 +238,9 @@ async function runLlmRules(
   for (const { rule, response, error } of results) {
     if (error) {
       process.stderr.write(
-        `error: LLM rule '${rule.name}' failed for ${displayStr}: ${error}\n`,
+        formatError(
+          `LLM rule '${rule.name}' failed for ${displayStr}: ${error}`,
+        ),
       );
       hasLlmError.value = true;
     } else if (
@@ -266,7 +282,7 @@ export const run = async (): Promise<number> => {
 
         if (format !== "text" && format !== "json") {
           process.stderr.write(
-            `error: invalid format '${format}'. Must be 'text' or 'json'\n`,
+            formatError(`invalid format '${format}'. Must be 'text' or 'json'`),
           );
           exitCode = 1;
           return;
@@ -274,7 +290,7 @@ export const run = async (): Promise<number> => {
 
         const setup = setupCommand(parsedPath, opts.config);
         if ("error" in setup) {
-          process.stderr.write(`${setup.error}\n`);
+          process.stderr.write(formatError(setup.error));
           exitCode = 1;
           return;
         }
@@ -301,7 +317,9 @@ export const run = async (): Promise<number> => {
             content = fs.readFileSync(fullPath, "utf-8");
           } catch (e) {
             process.stderr.write(
-              `error: could not read ${displayPath}: ${e instanceof Error ? e.message : e}\n`,
+              formatError(
+                `could not read ${displayPath}: ${e instanceof Error ? e.message : e}`,
+              ),
             );
             hasReadError = true;
             continue;
@@ -333,19 +351,9 @@ export const run = async (): Promise<number> => {
           diagnostics.length > 0 || hasReadError || hasLlmError.value;
 
         if (format === "text") {
-          for (const diag of diagnostics) {
-            if (diag.line !== null) {
-              process.stdout.write(
-                `[${diag.rule}] ${diag.file}:${diag.line}: ${diag.message}\n`,
-              );
-            } else {
-              process.stdout.write(
-                `[${diag.rule}] ${diag.file}: ${diag.message}\n`,
-              );
-            }
-            if (diag.snippet) {
-              process.stdout.write(`  | ${diag.snippet}\n`);
-            }
+          process.stdout.write(formatDiagnostics(diagnostics));
+          if (!hasReadError && !hasLlmError.value) {
+            process.stdout.write(formatSummary(diagnostics.length));
           }
         } else {
           process.stdout.write(JSON.stringify(diagnostics));
@@ -370,7 +378,7 @@ export const run = async (): Promise<number> => {
 
         const setup = setupCommand(parsedPath, opts.config);
         if ("error" in setup) {
-          process.stderr.write(`${setup.error}\n`);
+          process.stderr.write(formatError(setup.error));
           exitCode = 1;
           return;
         }
@@ -395,7 +403,9 @@ export const run = async (): Promise<number> => {
             content = fs.readFileSync(fullPath, "utf-8");
           } catch (e) {
             process.stderr.write(
-              `error: could not read ${displayPath}: ${e instanceof Error ? e.message : e}\n`,
+              formatError(
+                `could not read ${displayPath}: ${e instanceof Error ? e.message : e}`,
+              ),
             );
             hasError = true;
             continue;
@@ -450,7 +460,7 @@ export const run = async (): Promise<number> => {
                 content = await llmClient.fixContent(content, fixViolations);
               } catch (e) {
                 process.stderr.write(
-                  `error: LLM fix failed for ${displayPath}: ${e}\n`,
+                  formatError(`LLM fix failed for ${displayPath}: ${e}`),
                 );
                 hasError = true;
               }
@@ -459,9 +469,7 @@ export const run = async (): Promise<number> => {
 
           // Report unfixable violations
           for (const diag of unfixableDiagnostics) {
-            process.stderr.write(
-              `[${diag.rule}] ${diag.file}: ${diag.message} (unfixable)\n`,
-            );
+            process.stderr.write(formatUnfixable(diag));
           }
 
           if (content !== original) {
@@ -473,7 +481,7 @@ export const run = async (): Promise<number> => {
               process.stdout.write("\n");
             } else {
               fs.writeFileSync(fullPath, content, "utf-8");
-              process.stderr.write(`fixed: ${displayPath}\n`);
+              process.stderr.write(formatFixed(displayPath));
             }
           }
         }
@@ -491,7 +499,7 @@ export const run = async (): Promise<number> => {
 
       if (format !== "text" && format !== "json") {
         process.stderr.write(
-          `error: invalid format '${format}'. Must be 'text' or 'json'\n`,
+          formatError(`invalid format '${format}'. Must be 'text' or 'json'`),
         );
         exitCode = 1;
         return;
@@ -519,16 +527,7 @@ export const run = async (): Promise<number> => {
         process.stdout.write(JSON.stringify(rules));
       } else {
         for (const rule of rules) {
-          const tags = [
-            rule.type === "llm" ? "[llm]" : null,
-            rule.fixable ? "[fixable]" : null,
-          ]
-            .filter(Boolean)
-            .join(" ");
-          const suffix = tags ? ` ${tags}` : "";
-          process.stdout.write(
-            `${rule.name}${suffix}\n  ${rule.description}\n`,
-          );
+          process.stdout.write(formatListRule(rule));
         }
       }
     });
