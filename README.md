@@ -109,6 +109,7 @@ These call the Anthropic API for semantic analysis. They only run when a config 
 | `process_not_integration` | Skills should be step-by-step workflows, not reference manuals. |
 | `redundant_explanation` | Flags explanations of concepts an LLM already knows. |
 | `skill_example_xml_tags` | Behavioral examples must use `<good_example>`/`<bad_example>` tags. |
+| `linkable_content` | Checks that skill files link to external documentation instead of restating it inline. Uses web search to find canonical URLs. |
 | `unexplained_url` | URLs must have surrounding context explaining what they link to and why. |
 
 ## Configuration

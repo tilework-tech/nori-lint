@@ -14,6 +14,7 @@ export type LlmRule = {
   name: string;
   description: string;
   systemPrompt: string;
+  serverTools?: Array<Record<string, unknown>>;
   evaluate: (
     input: string,
     violations: Array<LlmViolation>,

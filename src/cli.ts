@@ -21,6 +21,7 @@ import { lineCountRule } from "@/rules/line-count.js";
 import { cliCommandIndexRule } from "@/rules/llm-rules/cli-command-index.js";
 import { duplicateSectionRule } from "@/rules/llm-rules/duplicate-section.js";
 import { firstPersonRule } from "@/rules/llm-rules/first-person.js";
+import { linkableContentRule } from "@/rules/llm-rules/linkable-content.js";
 import { negativeWithoutPositiveRule } from "@/rules/llm-rules/negative-without-positive.js";
 import { obviousInstructionsRule } from "@/rules/llm-rules/obvious-instructions.js";
 import { processNotIntegrationRule } from "@/rules/llm-rules/process-not-integration.js";
@@ -69,6 +70,7 @@ function defaultLlmRegistry(): LlmRegistry {
   registry.register(processNotIntegrationRule);
   registry.register(redundantExplanationRule);
   registry.register(skillExampleXmlTagsRule);
+  registry.register(linkableContentRule);
   registry.register(unexplainedUrlRule);
   return registry;
 }
@@ -192,7 +194,11 @@ async function runLlmRules(
   const results = await Promise.all(
     enabledRules.map(async (rule) => {
       try {
-        const response = await client.analyze(rule.systemPrompt, content);
+        const response = await client.analyze(
+          rule.systemPrompt,
+          content,
+          rule.serverTools,
+        );
         return { rule, response, error: null };
       } catch (e) {
         return { rule, response: null, error: e };

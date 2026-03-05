@@ -22,14 +22,21 @@ export type LlmFixViolation = {
 };
 
 export type LlmAnalyzer = {
-  analyze: (systemPrompt: string, userContent: string) => Promise<LlmResponse>;
+  analyze: (
+    systemPrompt: string,
+    userContent: string,
+    serverTools?: Array<Record<string, unknown>>,
+  ) => Promise<LlmResponse>;
   fixContent: (
     fileContent: string,
     violations: Array<LlmFixViolation>,
   ) => Promise<string>;
 };
 
-export const extractToolInputFromResponse = (body: unknown): LlmResponse => {
+export const extractToolInputFromResponse = (
+  body: unknown,
+  allowMissing = false,
+): LlmResponse => {
   const obj = body as Record<string, unknown>;
   const content = obj.content as Array<Record<string, unknown>> | undefined;
   if (!content || !Array.isArray(content)) {
@@ -38,6 +45,9 @@ export const extractToolInputFromResponse = (body: unknown): LlmResponse => {
 
   const toolBlock = content.find((block) => block.type === "tool_use");
   if (!toolBlock) {
+    if (allowMissing) {
+      return { has_violations: false, violations: [] };
+    }
     throw new LlmError("parse", "no tool_use block in API response");
   }
 
@@ -98,40 +108,46 @@ export class AnthropicClient implements LlmAnalyzer {
   async analyze(
     systemPrompt: string,
     userContent: string,
+    serverTools?: Array<Record<string, unknown>>,
   ): Promise<LlmResponse> {
-    const body = {
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userContent }],
-      tools: [
-        {
-          name: TOOL_NAME,
-          description: "Report lint violations found in the file",
-          input_schema: {
-            type: "object",
-            properties: {
-              has_violations: { type: "boolean" },
-              violations: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    text: { type: "string", description: "The offending text" },
-                    reason: {
-                      type: "string",
-                      description: "Why this is a violation",
-                    },
-                  },
-                  required: ["text", "reason"],
+    const hasServerTools = serverTools && serverTools.length > 0;
+    const reportTool = {
+      name: TOOL_NAME,
+      description: "Report lint violations found in the file",
+      input_schema: {
+        type: "object",
+        properties: {
+          has_violations: { type: "boolean" },
+          violations: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                text: { type: "string", description: "The offending text" },
+                reason: {
+                  type: "string",
+                  description: "Why this is a violation",
                 },
               },
+              required: ["text", "reason"],
             },
-            required: ["has_violations", "violations"],
           },
         },
-      ],
-      tool_choice: { type: "tool", name: TOOL_NAME },
+        required: ["has_violations", "violations"],
+      },
+    };
+
+    const tools = hasServerTools ? [...serverTools, reportTool] : [reportTool];
+
+    const body: Record<string, unknown> = {
+      model: MODEL,
+      max_tokens: hasServerTools ? FIX_MAX_TOKENS : MAX_TOKENS,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userContent }],
+      tools,
+      tool_choice: hasServerTools
+        ? { type: "auto" }
+        : { type: "tool", name: TOOL_NAME },
     };
 
     const response = await fetch(ANTHROPIC_API_URL, {
@@ -154,7 +170,7 @@ export class AnthropicClient implements LlmAnalyzer {
     }
 
     const responseBody: unknown = await response.json();
-    return extractToolInputFromResponse(responseBody);
+    return extractToolInputFromResponse(responseBody, !!hasServerTools);
   }
 
   async fixContent(

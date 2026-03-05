@@ -120,6 +120,81 @@ describe("extractToolInputFromResponse", () => {
     expect(result.violations).toHaveLength(1);
     expect(result.violations[0].text).toBe("Bad pattern");
   });
+
+  test("returns no-violations fallback when allowMissing is true and no tool_use block", () => {
+    const body = {
+      content: [
+        {
+          type: "server_tool_use",
+          id: "srvtool_1",
+          name: "web_search",
+          input: { query: "docker docs" },
+        },
+        {
+          type: "web_search_tool_result",
+          tool_use_id: "srvtool_1",
+          content: [
+            { type: "web_search_result", url: "https://docs.docker.com" },
+          ],
+        },
+        {
+          type: "text",
+          text: "No violations found.",
+        },
+      ],
+    };
+
+    const result = extractToolInputFromResponse(body, true);
+
+    expect(result.has_violations).toBe(false);
+    expect(result.violations).toEqual([]);
+  });
+
+  test("still throws when allowMissing is false and no tool_use block", () => {
+    const body = {
+      content: [{ type: "text", text: "No tool use" }],
+    };
+
+    expect(() => extractToolInputFromResponse(body, false)).toThrow();
+  });
+
+  test("extracts tool_use even when allowMissing is true and tool_use exists", () => {
+    const body = {
+      content: [
+        {
+          type: "server_tool_use",
+          id: "srvtool_2",
+          name: "web_search",
+          input: { query: "github actions docs" },
+        },
+        {
+          type: "web_search_tool_result",
+          tool_use_id: "srvtool_2",
+          content: [],
+        },
+        {
+          type: "tool_use",
+          id: "tool_xyz",
+          name: "report_lint_violations",
+          input: {
+            has_violations: true,
+            violations: [
+              {
+                text: "Inlined docs",
+                reason: "Link to https://docs.github.com",
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const result = extractToolInputFromResponse(body, true);
+
+    expect(result.has_violations).toBe(true);
+    expect(result.violations).toHaveLength(1);
+    expect(result.violations[0].text).toBe("Inlined docs");
+  });
 });
 
 describe("extractFixFromResponse", () => {

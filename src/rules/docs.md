@@ -24,7 +24,7 @@ Path: @/src/rules
 
 ### Things to Know
 
-- The `Rule` type (deterministic) and `LlmRule` type (LLM) are separate types with different shapes. `Rule.run()` receives only file content; `Rule.fix()` (optional) also receives full file content and returns the corrected string. `LlmRule.evaluate()` receives both file content and the LLM's parsed violations. `LlmRule.systemPrompt` provides the prompt sent to the LLM.
+- The `Rule` type (deterministic) and `LlmRule` type (LLM) are separate types with different shapes. `Rule.run()` receives only file content; `Rule.fix()` (optional) also receives full file content and returns the corrected string. `LlmRule.evaluate()` receives both file content and the LLM's parsed violations. `LlmRule.systemPrompt` provides the prompt sent to the LLM. `LlmRule.serverTools` (optional) declares server-side tools the rule needs during analysis (e.g., web search); the CLI passes these through to `LlmAnalyzer.analyze()`.
 - `Rule.run()` returns `Array<RuleViolation>`, allowing a single rule to report multiple violations per file. Line-level rules (bold_italics, markdown_links) may return many violations; file-level rules (line_count, required_tags) return zero or one.
 - `Rule.fix()` operates on the full file content, not individual violations. During `nori-lint fix`, the CLI calls `rule.run()` first to detect violations, then `rule.fix()` if present. The fix functions preserve content inside code blocks and inline code spans.
 - The `markdown_links` rule tracks `inExampleBlock` state to skip content inside XML example tags (`<good-example>`, `<bad-example>`, `<good_example>`, `<bad_example>`). This pattern is not used by other deterministic rules.
