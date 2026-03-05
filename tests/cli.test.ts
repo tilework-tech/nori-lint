@@ -902,6 +902,7 @@ describe("CLI integration tests", () => {
           "npm",
           ["pack", "--pack-destination", tmpDir],
           {
+            cwd: savedCwd,
             encoding: "utf-8",
             timeout: 30000,
           },
