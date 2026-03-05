@@ -24,6 +24,7 @@ Path: @/tests
 
 ### Things to Know
 
+- Every test runs in a fresh isolated temp directory: `beforeEach` saves the original cwd, changes to a new temp directory, and `afterEach` restores the original cwd. This is critical because `resolveConfig()` in @/src/cli.ts checks `process.cwd()` for `.nori-lint.json` -- without isolation, tests would fail if run from a host directory that already has a `.nori-lint.json` file (e.g., the repository root), causing unexpected LLM rules to be enabled and timeouts to occur
 - The config integration tests validate error paths only -- they do not test successful LLM rule execution since that would require a real API key
 - The auto-discovery test writes a deliberately invalid config to prove the file was loaded
 - Tests that check for a specific rule's violation use `.find()` or `.some()` on the diagnostics array rather than asserting exact array length, since a single file may trigger violations from multiple rules simultaneously
