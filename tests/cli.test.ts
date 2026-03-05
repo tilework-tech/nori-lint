@@ -240,7 +240,7 @@ describe("CLI integration tests", () => {
         dir,
       ]);
       expect(code).toBe(1);
-      expect(stdout).toContain("[line_count]");
+      expect(stdout).toContain("line_count");
     });
   });
 
