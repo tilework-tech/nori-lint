@@ -56,41 +56,11 @@ export const frontmatterNameFormatRule: Rule = {
     }
 
     if (!NAME_PATTERN.test(name)) {
-      if (/[A-Z]/.test(name)) {
-        violations.push({
-          message: "Frontmatter name must use lowercase letters only",
-          snippet: name,
-        });
-      }
-
-      if (name.startsWith("-")) {
-        violations.push({
-          message: "Frontmatter name must not start with a hyphen",
-          snippet: name,
-        });
-      }
-
-      if (name.endsWith("-")) {
-        violations.push({
-          message: "Frontmatter name must not end with a hyphen",
-          snippet: name,
-        });
-      }
-
-      if (name.includes("--")) {
-        violations.push({
-          message: "Frontmatter name must not contain consecutive hyphens",
-          snippet: name,
-        });
-      }
-
-      if (/[^a-zA-Z0-9-]/.test(name)) {
-        violations.push({
-          message:
-            "Frontmatter name may only contain lowercase letters, numbers, and hyphens",
-          snippet: name,
-        });
-      }
+      violations.push({
+        message:
+          "Frontmatter name must contain only lowercase letters, numbers, and hyphens (e.g. my-skill-name)",
+        snippet: name,
+      });
     }
 
     return violations;
