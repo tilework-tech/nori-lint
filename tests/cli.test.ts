@@ -842,8 +842,8 @@ describe("CLI integration tests", () => {
         fixable: boolean;
       }>;
       expect(Array.isArray(rules)).toBe(true);
-      // 11 deterministic + 10 LLM = 21 total
-      expect(rules.length).toBe(21);
+      // 12 deterministic + 10 LLM = 22 total
+      expect(rules.length).toBe(22);
     });
 
     test("each rule has name, description, type, and fixable fields", async () => {

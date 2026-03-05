@@ -33,6 +33,7 @@ import { redundantTitleRule } from "@/rules/redundant-title.js";
 import { requiredTagsRule } from "@/rules/required-tags.js";
 import { trailingWhitespaceRule } from "@/rules/trailing-whitespace.js";
 import { unclosedTagsRule } from "@/rules/unclosed-tags.js";
+import { whenToUseRule } from "@/rules/when-to-use.js";
 
 import type { Config } from "@/config.js";
 import type { LintDiagnostic } from "@/diagnostic.js";
@@ -54,6 +55,7 @@ function defaultRegistry(): Registry {
   registry.register(requiredTagsRule);
   registry.register(trailingWhitespaceRule);
   registry.register(unclosedTagsRule);
+  registry.register(whenToUseRule);
   return registry;
 }
 
