@@ -36,57 +36,62 @@ describe("frontmatter_name_format rule", () => {
     expect(result[0].message).toContain("64");
   });
 
-  test("returns violation for name with uppercase letters", () => {
+  test("returns exactly one violation for name with uppercase letters", () => {
     const content =
       "---\nname: My-Skill\ndescription: Does things.\n---\n\nBody.";
     const result = frontmatterNameFormatRule.run(content);
-    expect(result.length).toBeGreaterThan(0);
-    expect(result[0].message.toLowerCase()).toContain("lowercase");
+    expect(result.length).toBe(1);
+    expect(result[0].snippet).toBe("My-Skill");
   });
 
-  test("returns violation for name with spaces", () => {
+  test("returns exactly one violation for name with spaces", () => {
     const content =
       "---\nname: my skill\ndescription: Does things.\n---\n\nBody.";
     const result = frontmatterNameFormatRule.run(content);
-    expect(result.length).toBeGreaterThan(0);
+    expect(result.length).toBe(1);
   });
 
-  test("returns violation for name starting with hyphen", () => {
+  test("returns exactly one violation for name starting with hyphen", () => {
     const content =
       "---\nname: -my-skill\ndescription: Does things.\n---\n\nBody.";
     const result = frontmatterNameFormatRule.run(content);
-    expect(result.length).toBeGreaterThan(0);
-    expect(result[0].message).toContain("start");
+    expect(result.length).toBe(1);
   });
 
-  test("returns violation for name ending with hyphen", () => {
+  test("returns exactly one violation for name ending with hyphen", () => {
     const content =
       "---\nname: my-skill-\ndescription: Does things.\n---\n\nBody.";
     const result = frontmatterNameFormatRule.run(content);
-    expect(result.length).toBeGreaterThan(0);
-    expect(result[0].message).toContain("end");
+    expect(result.length).toBe(1);
   });
 
-  test("returns violation for name with consecutive hyphens", () => {
+  test("returns exactly one violation for name with consecutive hyphens", () => {
     const content =
       "---\nname: my--skill\ndescription: Does things.\n---\n\nBody.";
     const result = frontmatterNameFormatRule.run(content);
-    expect(result.length).toBeGreaterThan(0);
-    expect(result[0].message).toContain("consecutive");
+    expect(result.length).toBe(1);
   });
 
-  test("returns violation for name with underscores", () => {
+  test("returns exactly one violation for name with underscores", () => {
     const content =
       "---\nname: my_skill\ndescription: Does things.\n---\n\nBody.";
     const result = frontmatterNameFormatRule.run(content);
-    expect(result.length).toBeGreaterThan(0);
+    expect(result.length).toBe(1);
   });
 
-  test("returns violation for name with special characters", () => {
+  test("returns exactly one violation for name with special characters", () => {
     const content =
       "---\nname: my@skill!\ndescription: Does things.\n---\n\nBody.";
     const result = frontmatterNameFormatRule.run(content);
-    expect(result.length).toBeGreaterThan(0);
+    expect(result.length).toBe(1);
+  });
+
+  test("returns exactly one violation for name with multiple problems (uppercase and spaces)", () => {
+    const content =
+      "---\nname: Finishing a Development Branch\ndescription: Does things.\n---\n\nBody.";
+    const result = frontmatterNameFormatRule.run(content);
+    expect(result.length).toBe(1);
+    expect(result[0].snippet).toBe("Finishing a Development Branch");
   });
 
   test("returns empty when no frontmatter (skips gracefully)", () => {
