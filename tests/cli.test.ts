@@ -97,6 +97,20 @@ describe("CLI integration tests", () => {
     });
   });
 
+  describe("--version flag", () => {
+    test("--version outputs semver and exits success", async () => {
+      const { code, stdout } = await withArgs(["--version"]);
+      expect(code).toBe(0);
+      expect(stdout.trim()).toMatch(/^\d+\.\d+\.\d+$/);
+    });
+
+    test("-V outputs semver and exits success", async () => {
+      const { code, stdout } = await withArgs(["-V"]);
+      expect(code).toBe(0);
+      expect(stdout.trim()).toMatch(/^\d+\.\d+\.\d+$/);
+    });
+  });
+
   describe("lint subcommand - basic behavior", () => {
     test("exits success when no skill files found", async () => {
       const dir = createTempDir();

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Command } from "commander";
+import { Command, CommanderError } from "commander";
 import { globSync } from "glob";
 
 import { loadConfig, isRuleEnabled } from "@/config.js";
@@ -38,6 +38,19 @@ import { whenToUseRule } from "@/rules/when-to-use.js";
 import type { Config } from "@/config.js";
 import type { LintDiagnostic } from "@/diagnostic.js";
 import type { LlmAnalyzer, LlmFixViolation } from "@/llm-client.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const version = ((): string => {
+  // In dev: src/cli.ts -> ../package.json
+  // In build: build/src/cli.js -> ../../package.json
+  for (const rel of ["../package.json", "../../package.json"]) {
+    const candidate = path.resolve(__dirname, rel);
+    if (fs.existsSync(candidate)) {
+      return JSON.parse(fs.readFileSync(candidate, "utf-8")).version;
+    }
+  }
+  return "unknown";
+})();
 
 /**
  *
@@ -234,6 +247,7 @@ export const run = async (): Promise<number> => {
   program
     .name("nori-lint")
     .description("Lint SKILL.md files for common issues")
+    .version(version)
     .configureOutput({
       writeOut: (str) => process.stdout.write(str),
       writeErr: (str) => process.stderr.write(str),
@@ -526,10 +540,8 @@ export const run = async (): Promise<number> => {
       return 0;
     }
     await program.parseAsync(process.argv);
-  } catch {
-    // Commander throws on --help; check if help was requested
-    const args = process.argv.slice(2);
-    if (args.includes("--help") || args.includes("-h")) {
+  } catch (err) {
+    if (err instanceof CommanderError && err.exitCode === 0) {
       return 0;
     }
     return 1;
@@ -538,9 +550,9 @@ export const run = async (): Promise<number> => {
   return exitCode;
 };
 
-const __filename = fileURLToPath(import.meta.url);
 const isMainModule = (() => {
   try {
+    const __filename = fileURLToPath(import.meta.url);
     return fs.realpathSync(process.argv[1]) === fs.realpathSync(__filename);
   } catch {
     return false;
