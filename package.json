@@ -7,6 +7,14 @@
   "files": [
     "build"
   ],
+  "main": "./build/src/index.js",
+  "types": "./build/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./build/src/index.d.ts",
+      "import": "./build/src/index.js"
+    }
+  },
   "bin": {
     "nori-lint": "./build/src/cli.js"
   },

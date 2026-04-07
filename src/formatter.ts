@@ -2,7 +2,7 @@ import pc from "picocolors";
 
 import type { LintDiagnostic } from "@/diagnostic.js";
 
-type ListRule = {
+export type ListRule = {
   name: string;
   description: string;
   type: "deterministic" | "llm";

@@ -4,12 +4,14 @@ Path: @/tests
 
 ### Overview
 
-- Integration tests for the `nori-lint` CLI
-- Tests invoke the `run()` function directly with stubbed `process.argv`, `process.stdout.write`, and `process.stderr.write` to capture output
+- Integration tests for the `nori-lint` CLI and library API
+- CLI tests invoke the `run()` function directly with stubbed `process.argv`, `process.stdout.write`, and `process.stderr.write` to capture output
+- Library tests import from `@/index.js` and exercise the programmatic API (registries, config filtering, diagnostics)
 
 ### How it fits into the larger codebase
 
-- Exercises the full end-to-end pipeline for all three subcommands (`lint`, `fix`, and `list`): file discovery, rule execution, rule enable/disable filtering, output formatting (text and JSON), directory argument handling, `--help` output, config handling, dry-run mode, rule metadata listing, and exit codes
+- `cli.test.ts` exercises the full end-to-end pipeline for all three subcommands (`lint`, `fix`, and `list`): file discovery, rule execution, rule enable/disable filtering, output formatting (text and JSON), directory argument handling, `--help` output, config handling, dry-run mode, rule metadata listing, and exit codes
+- `library.test.ts` exercises the library API exported from `@/src/index.ts`: constructing registries via `defaultRegistry()`/`defaultLlmRegistry()`, running deterministic rules programmatically, converting violations to diagnostics via `fromViolation()`, and filtering rules via `isRuleEnabled()` with config objects
 - Run via `npm test` (vitest)
 - Unit tests for individual rules and modules live alongside production code in `@/src/` as `.test.ts` files
 - LLM rules are not exercised via real API calls in integration tests; config tests verify config loading, validation, and error reporting behavior
