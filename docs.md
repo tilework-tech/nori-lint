@@ -4,7 +4,7 @@ Path: @/
 
 ### Overview
 
-- TypeScript CLI tool that lints and auto-fixes SKILL.md files (AI agent skill configuration files)
+- TypeScript CLI tool **and library** that lints and auto-fixes SKILL.md files (AI agent skill configuration files)
 - Uses a two-tier rule system: synchronous deterministic rules (`Rule` type) and async LLM-based rules (`LlmRule` type) that call the Anthropic Messages API for subjective analysis
 - LLM rules execute concurrently via `Promise.all`, reducing wall-clock time to roughly the duration of the slowest single API call
 - Three subcommands: `lint` (report violations with `--format text|json`), `fix` (auto-fix violations with `--dry-run` support), and `list` (display all available rules with metadata)
@@ -14,10 +14,12 @@ Path: @/
 - Part of the Nori monorepo; sits alongside other Nori projects
 - Intended to lint SKILL.md files found throughout the Nori skills system (e.g., files under `~/.claude/skills/`)
 - JSON output mode enables machine consumption by other tools in the Nori ecosystem
-- No runtime dependencies on other Nori projects -- operates as a standalone CLI
+- No runtime dependencies on other Nori projects -- operates as a standalone CLI or importable library
+- The `exports` field in `@/package.json` exposes the library entrypoint at `@/src/index.ts`, so `import { ... } from 'nori-lint'` works for programmatic consumers. The `main` and `types` fields point to the compiled output for CommonJS/types resolution.
 
 ### Core Implementation
 
+- **Library entrypoint:** `@/src/index.ts` is a barrel export that re-exports the public API: core classes (`Registry`, `LlmRegistry`), factory functions (`defaultRegistry`, `defaultLlmRegistry` from `@/src/defaults.ts`), config utilities, diagnostic types, LLM client, all individual rule objects, and formatter utilities. Library consumers can construct pre-populated registries via the factory functions, or build custom registries by importing individual rules. The `LlmAnalyzer` interface type is exported so consumers can implement their own LLM backend.
 - **Entry point:** `@/src/cli.ts` uses `commander` with a subcommand pattern for CLI parsing, `glob` for file discovery, and native `fetch` for HTTP. Running `nori-lint` with no arguments shows help; `nori-lint lint [path]` reports violations; `nori-lint fix [path]` auto-fixes them; `nori-lint list` displays all registered rules. The `run()` function is the async entry point. It self-invokes when run directly via `import.meta.url` check. All text output formatting is delegated to `@/src/formatter.ts`, which provides ESLint-style colored output with file grouping and summary lines using `picocolors`.
 - **Two-tier rule system:** Deterministic rules conform to the `Rule` type (in `@/src/rules/index.ts`) and are registered into `Registry` (in `@/src/registry.ts`). LLM rules conform to the `LlmRule` type (in `@/src/rules/llm-rules/index.ts`) and are registered into `LlmRegistry` (in `@/src/llm-registry.ts`). Both produce `RuleViolation` structs from `@/src/diagnostic.ts`. LLM rules may optionally declare `serverTools` (e.g., Anthropic web search) which changes the API call behavior in `@/src/llm-client.ts`.
 - **Deterministic fix support:** The `Rule` type has an optional `fix` method. Rules that implement `fix` can auto-correct violations (e.g., `bold_italics`, `markdown_links`, `redundant_title`). Rules without `fix` (e.g., `description_action`, `frontmatter`, `frontmatter_name_format`, `line_count`, `required_tags`, `unclosed_tags`) are reported as unfixable during `nori-lint fix`.
@@ -38,7 +40,7 @@ Path: @/
 - Unknown rule names in `enabled` or `disabled` produce a warning on stderr (not a hard error).
 - Exit codes: 0 = no violations, 1 = violations/errors/invalid format/config error
 - LLM errors are printed to stderr and cause exit code 1, but do not prevent deterministic rule results from being output
-- Uses ESM modules, TypeScript 5.7, Node 22, vitest for testing
+- Uses ESM modules, TypeScript 5.7, Node 22, vitest for testing. `tsconfig.json` uses `module: "Node16"` and `moduleResolution: "Node16"` to properly support the `exports` field in `package.json`.
 - Path aliases (`@/` -> `src/`) are resolved by `tsc-alias` at build time
 - Stale build protection: `prebuild` clears `build/` before every build, `prepublishOnly` forces a clean build + test before `npm publish`, and CI builds before testing. The vitest config (`@/vitest.config.ts`) excludes `.worktrees/**` from test discovery to prevent stale or divergent test files in git worktree directories from being picked up during `npm test`. The npm-pack simulation test in `@/tests/cli.test.ts` provides end-to-end coverage of the distribution pipeline by packing, extracting, installing, symlinking, and running the CLI.
 - Runtime dependencies: `commander` (CLI parsing), `glob` (file discovery), `yaml` (YAML parsing for frontmatter validation), `picocolors` (ANSI color codes for terminal output, auto-respects `NO_COLOR` env var). All other functionality uses Node built-ins.
